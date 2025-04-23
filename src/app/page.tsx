@@ -1,6 +1,5 @@
 'use client';
 
-import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -10,6 +9,7 @@ import { useRef, useState, useCallback } from "react"
 import { toast } from "sonner"
 import { motion } from 'motion/react';
 import { Dialog, DialogContent, DialogFooter, DialogTitle, DialogClose } from "@/components/ui/dialog"
+import Image from "next/image";
 
 import {
   DropdownMenu,
@@ -65,7 +65,7 @@ export default function Home() {
     } else {
       setLoading(false)
     }
-  }, []);
+  }, [router, generateMeetingLink]);
 
 
   // Function to schedule a meeting for later
@@ -75,7 +75,7 @@ export default function Home() {
       setMeetingLink(link);
     }
     setLoading(false)
-  }, []);
+  }, [generateMeetingLink]);
 
 
   // Function to join a meeting
@@ -100,7 +100,7 @@ export default function Home() {
       })
     }
     setLoading(false)
-  }, []);
+  }, [router]);
 
 
   // Function to copy the meeting link to clipboard
@@ -209,16 +209,19 @@ export default function Home() {
 
           <div className="mt-10 border-t border-border pt-6">
             <p className="text-muted-foreground">
-              <Link href="/learn-more" className="text-primary hover:underline">
+              <span className="text-primary hover:underline cursor-pointer">
                 Learn more
-              </Link>{" "}
+              </span>{" "}
               about Google Meet
             </p>
           </div>
         </div>
 
         <div className="max-w-lg m-5 md:mx-auto">
-          <img
+          <Image
+            width={500}
+            height={500}
+            loading="lazy"
             src="/img.jpeg"
             alt="People in a video conference"
             className="w-full rounded-lg"
@@ -236,7 +239,7 @@ export default function Home() {
             className="w-full h-full bg-background overflow-hidden"
           >
             <DialogTitle className="flex justify-between items-center mb-3 text-xl font-semibold">
-              Here's your joining information
+              Here&apos;s your joining information
               <DialogClose asChild>
                 <Button variant="ghost" size="icon" className="focus-visible:ring-0">
                   <LucideX className="h-4 w-4" />

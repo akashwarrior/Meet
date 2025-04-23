@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
         const { id } = await req.json();
         userId = id;
     } catch (err) {
-        console.log("No user ID provided, creating open meeting");
+        console.log("No user ID provided, creating open meeting", err);
     }
     try {
         if (userId) {
@@ -30,8 +30,8 @@ export async function POST(req: NextRequest) {
             }
         });
         return Response.json({ link: `${baseUrl}/meeting/${meeting.id}` }, { status: 200 });
-    } catch (error) {
-        console.error("Error creating meeting:");
+    } catch (err) {
+        console.error("Error creating meeting:", err);
     }
 
     return Response.json({ error: "Failed to create meeting" }, { status: 500 });

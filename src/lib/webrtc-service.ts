@@ -4,23 +4,28 @@ enum WebRTCEvents {
     "ICE_CANDIDATE",
     "USER_JOINED",
     "USER_LEFT",
-    "DATA_MESSAGE",
-    "ERROR",
 }
 
 interface Message {
     type: WebRTCEvents;
     from: number;
-    name?: string;
+    name: string;
     to: number;
-    data: any;
+    data: RTCSessionDescriptionInit | RTCIceCandidateInit | null;
 }
 
 export interface Participant {
     id: number,
-    name?: string,
+    name: string,
     audio: MediaStreamTrack | null,
     video: MediaStreamTrack | null,
+}
+
+export interface DataChannelMessage {
+    sender: string,
+    content: string,
+    timestamp: number,
+    connectToServer: boolean
 }
 
 declare global {
@@ -31,21 +36,27 @@ declare global {
 
 export class WebRTCService {
     // Initialize with default STUN servers
-    private readonly configuration = {
+    private readonly configuration: RTCConfiguration = {
         iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
             { urls: "stun:stun1.l.google.com:19302" }
         ],
+        iceCandidatePoolSize: 10,
+        iceTransportPolicy: "all",
+        bundlePolicy: "max-bundle",
+        rtcpMuxPolicy: "require",
     };
     private peerConnection: RTCPeerConnection[];
     private socket: WebSocket | null = null
-    private stream: MediaStream | null = null;
+    private stream: MediaStream;
+    private dataChannel: RTCDataChannel | null = null
 
 
     // Callbacks
     private onParticipantLeaveCallback: ((id: number) => void) | null = null
-    private getMediaStreamCallback: ((id: number, stream: MediaStreamTrack | null) => void) | null = null
+    private getMediaStreamCallback: ((id: number, stream: MediaStreamTrack | null, kind: "video" | "audio") => void) | null = null
     private getParticipantsCallback: ((participants: Participant) => void) | null = null
+    private onDataChannelMessageCallback: ((message: DataChannelMessage) => void) | null = null
 
 
     // Singleton instance
@@ -60,7 +71,7 @@ export class WebRTCService {
             }
         } catch (error) {
             console.error("Error connecting to signaling server:", error);
-            this.instance.leave();
+            this.instance.close();
             this.instance = null
         }
         return this.instance;
@@ -70,6 +81,7 @@ export class WebRTCService {
     // Private constructor to prevent instantiation
     private constructor() {
         this.peerConnection = [];
+        this.stream = new MediaStream();
     }
 
     // Connect to signaling server
@@ -82,7 +94,6 @@ export class WebRTCService {
 
                 this.socket.onopen = () => {
                     console.log("Connected to signaling server")
-                    this.getParticipants
                     resolve()
                 }
 
@@ -103,13 +114,12 @@ export class WebRTCService {
         })
     }
 
-    public getMediaStreams(callback: (id: number, stream: MediaStreamTrack | null) => void): void {
+    public getMediaStreams(callback: (id: number, stream: MediaStreamTrack | null, kind: "audio" | "video") => void): void {
         this.getMediaStreamCallback = callback;
     }
 
-    public async sendMediaStream(): Promise<MediaStream | null> {
-        this.stopMediaStream();
-        console.log("Sending stream...")
+    public async sendVideoStream(): Promise<void> {
+        console.log("Sending video stream...")
 
         const stream = await navigator.mediaDevices.getUserMedia({
             video: {
@@ -118,55 +128,145 @@ export class WebRTCService {
                 height: { ideal: 720, max: 1080 },
                 frameRate: { ideal: 30, max: 60 },
             },
-            audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: false,
-            }
+            audio: false,
         });
 
         const videoTrack = stream.getVideoTracks()[0];
-        const audioTrack = stream.getAudioTracks()[0];
 
         for (const pc of this.peerConnection) {
             let videoTransceiver = pc.getTransceivers().find(t => t.sender.track?.kind === 'video');
             if (!videoTransceiver) {
                 videoTransceiver = pc.addTransceiver('video', { direction: 'sendrecv' });
             }
+            await videoTransceiver.sender.replaceTrack(videoTrack);
+        }
+
+        this.stream.addTrack(videoTrack);
+        this.getMediaStreamCallback?.(-1, videoTrack, "video");
+    }
+
+    public async sendAudioStream(): Promise<void> {
+        console.log("Sending audio stream...")
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: false,
+            audio: {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+                channelCount: 1,
+                sampleRate: 48000,
+                sampleSize: 24,
+            }
+        });
+
+        const audioContext = new AudioContext();
+        const source = audioContext.createMediaStreamSource(stream);
+
+        const gainNode = audioContext.createGain();
+        gainNode.gain.value = 1.5;
+
+        const highPassFilter = audioContext.createBiquadFilter();
+        highPassFilter.type = "highpass";
+        highPassFilter.frequency.value = 100;
+
+        const lowPassFilter = audioContext.createBiquadFilter();
+        lowPassFilter.type = "lowpass";
+        lowPassFilter.frequency.value = 9000;
+
+        // -----------
+        const compressionSettings = {
+            threshold: 0,
+            knee: 40,
+            ratio: 4,
+            attack: 0.3,
+            release: 0.25,
+        }
+
+        const compressor = audioContext.createDynamicsCompressor();
+        compressor.threshold.setValueAtTime(compressionSettings.threshold, audioContext.currentTime);
+        compressor.knee.setValueAtTime(compressionSettings.knee, audioContext.currentTime);
+        compressor.ratio.setValueAtTime(compressionSettings.ratio, audioContext.currentTime);
+        compressor.attack.setValueAtTime(compressionSettings.attack, audioContext.currentTime);
+        compressor.release.setValueAtTime(compressionSettings.release, audioContext.currentTime);
+
+        source
+            .connect(highPassFilter)
+            .connect(lowPassFilter)
+            .connect(compressor)
+            .connect(gainNode)
+
+        // Route output to another MediaStream for WebRTC
+        const destination = audioContext.createMediaStreamDestination();
+        gainNode.connect(destination);
+
+        // Use this for WebRTC
+        const processedStream = destination.stream;
+
+        const audioTrack = processedStream.getAudioTracks()[0];
+
+        for (const pc of this.peerConnection) {
             let audioTransceiver = pc.getTransceivers().find(t => t.sender.track?.kind === 'audio');
             if (!audioTransceiver) {
                 audioTransceiver = pc.addTransceiver('audio', { direction: 'sendrecv' });
             }
-            await videoTransceiver.sender.replaceTrack(videoTrack);
             await audioTransceiver.sender.replaceTrack(audioTrack);
         }
 
-        this.stream = stream;
-        this.getMediaStreamCallback?.(-1, videoTrack);
-        this.getMediaStreamCallback?.(-1, audioTrack);
-        return stream;
+        this.stream.addTrack(audioTrack);
     }
 
-    public stopMediaStream(): void {
-        if (!this.stream) return;
-        this.stream.getTracks().forEach(track => track.stop());
-        for (const pc of this.peerConnection) {
-            const transceivers = pc.getTransceivers();
-            transceivers.forEach(transceiver => {
-                transceiver.direction = 'recvonly';
-                transceiver.sender.replaceTrack(null);
-            });
+    public stopVideoStream(): void {
+        const videoTrack = this.stream.getVideoTracks()[0];
+        if (videoTrack) {
+            videoTrack.stop();
+            this.stream.removeTrack(videoTrack);
+            for (const pc of this.peerConnection) {
+                const transceivers = pc.getTransceivers();
+                if (this.stream.getTracks().length === 0) {
+                    transceivers.forEach(transceiver => {
+                        transceiver.direction = 'recvonly';
+                        transceiver.sender.replaceTrack(null);
+                    });
+                } else {
+                    const transceiver = transceivers.find(t => t.sender.track?.kind === 'video');
+                    transceiver?.sender.replaceTrack(null);
+                }
+            }
+            this.getMediaStreamCallback?.(-1, null, "video");
         }
-        this.stream = null;
-        this.getMediaStreamCallback?.(-1, null);
-        console.log("Stopped stream")
+        console.log("Stopped video stream")
     }
+
+    public stopAudioStream(): void {
+        if (!this.stream) return;
+        const audioTrack = this.stream.getAudioTracks()[0];
+        if (audioTrack) {
+            audioTrack.stop();
+            this.stream.removeTrack(audioTrack);
+            for (const pc of this.peerConnection) {
+                const transceivers = pc.getTransceivers();
+                if (this.stream.getTracks().length === 0) {
+                    transceivers.forEach(transceiver => {
+                        transceiver.direction = 'recvonly';
+                        transceiver.sender.replaceTrack(null);
+                    });
+                } else {
+                    const transceiver = transceivers.find(t => t.sender.track?.kind === 'audio');
+                    transceiver?.sender.replaceTrack(null);
+                }
+            }
+            this.getMediaStreamCallback?.(-1, null, "audio");
+        }
+        console.log("Stopped audio stream")
+    }
+
 
     public getParticipants(callback: (participant: Participant) => void): void {
         this.getParticipantsCallback = callback;
         callback({
             id: -1,
-            name: "Hulk",
+            name: "You",
             audio: null,
             video: null,
         })
@@ -176,31 +276,36 @@ export class WebRTCService {
         this.onParticipantLeaveCallback = callback
     }
 
+
     // Send a message through the data channel
-    // public sendDataMessage(message: Message): void {
-    //     if (this.dataChannel && this.dataChannel.readyState === "open") {
-    //         this.dataChannel.send(JSON.stringify(message))
-    //     } else {
-    //         console.error("No open data channel or WebSocket connection")
-    //     }
-    // }
+    public sendDataMessage(message: DataChannelMessage): void {
+        if (this.dataChannel && this.dataChannel.readyState === "open") {
+            this.dataChannel.send(JSON.stringify(message))
+        } else {
+            console.error("No open data channel or WebSocket connection")
+        }
+    }
 
 
     // Leave the meeting and clean up resources
-    public leave(): void {
+    public close(): void {
         this.peerConnection.forEach((pc) => {
             pc.getTransceivers().forEach(transceiver => transceiver.stop());
+            pc.getSenders().forEach(sender => sender.track?.stop());
+            pc.getReceivers().forEach(receiver => receiver.track?.stop());
             pc.close()
         })
         this.peerConnection = [];
 
-        this.stream?.getTracks().forEach((track) => track.stop());
+        this.stream?.getTracks().forEach((track) => {
+            track.stop();
+            this.stream.removeTrack(track);
+        });
 
         if (this.socket) {
             this.socket.close()
         }
 
-        this.stream = null
         this.socket = null
     }
 
@@ -224,31 +329,53 @@ export class WebRTCService {
             video: null,
         });
 
-        const audioTransceiver = pc.addTransceiver('audio', { direction: this.stream ? 'sendrecv' : 'recvonly' });
-        const videoTransceiver = pc.addTransceiver('video', { direction: this.stream ? 'sendrecv' : 'recvonly' });
+        const audioTransceiver = pc.addTransceiver('audio', { direction: this.stream.getTracks().length ? 'sendrecv' : 'recvonly' });
+        const videoTransceiver = pc.addTransceiver('video', { direction: this.stream.getTracks().length ? 'sendrecv' : 'recvonly' });
 
-        const params = videoTransceiver.sender.getParameters();
-        params.encodings = [{
-            maxBitrate: 100000,
+        const videoParams = videoTransceiver.sender.getParameters();
+        videoParams.encodings = [{
+            maxBitrate: 2_00_000,
             maxFramerate: 60,
             networkPriority: 'high',
             priority: 'high',
         }];
 
-        videoTransceiver.setCodecPreferences([
-            { mimeType: 'video/VP9', clockRate: 90000 },
-            { mimeType: 'video/VP8', clockRate: 90000 },
-        ]);
+        const audioParams = audioTransceiver.sender.getParameters();
+        audioParams.encodings = [{
+            maxBitrate: 64_000,
+            networkPriority: 'high',
+            priority: 'high',
+        }];
 
-        await videoTransceiver.sender.setParameters(params);
+        const audioCapabilities = RTCRtpSender.getCapabilities('audio');
+        const bestAudioCodec = audioCapabilities?.codecs.find(codec => codec.mimeType === 'audio/opus')
+            || audioCapabilities?.codecs[0];
 
-        videoTransceiver.sender.replaceTrack(this.stream?.getVideoTracks()[0] || null);
-        audioTransceiver.sender.replaceTrack(this.stream?.getAudioTracks()[0] || null);
+        if (bestAudioCodec) {
+            audioTransceiver.setCodecPreferences([bestAudioCodec]);
+        }
+
+        const videoCapabilities = RTCRtpSender.getCapabilities('video');
+        const bestVideoCodec = videoCapabilities?.codecs.find(codec => codec.mimeType === 'video/VP9')
+            || videoCapabilities?.codecs.find(codec => codec.mimeType === 'video/VP8')
+            || videoCapabilities?.codecs.find(codec => codec.mimeType === 'video/H264')
+            || videoCapabilities?.codecs[0];
+
+
+        if (bestVideoCodec) {
+            videoTransceiver.setCodecPreferences([bestVideoCodec]);
+        }
+
+        await videoTransceiver.sender.setParameters(videoParams);
+        await audioTransceiver.sender.setParameters(audioParams);
+
+        videoTransceiver.sender.replaceTrack(this.stream.getVideoTracks()[0]);
+        audioTransceiver.sender.replaceTrack(this.stream.getAudioTracks()[0]);
 
         // Stats
-        this.getStats(pc).catch((error) => {
-            console.error("Error getting stats:", error)
-        });
+        // this.getStats(pc).catch((error) => {
+        //     console.error("Error getting stats:", error)
+        // });
 
         pc.onnegotiationneeded = () => {
             console.log("Negotiation needed")
@@ -256,6 +383,7 @@ export class WebRTCService {
                 type: WebRTCEvents.OFFER,
                 from: data.from,
                 to: data.from,
+                name: data.name,
                 data: null,
             }))
         }
@@ -263,7 +391,7 @@ export class WebRTCService {
         pc.ontrack = async ({ track }) => {
             track.onended = () => {
                 console.log("Track ended")
-                this.getMediaStreamCallback?.(data.from, null);
+                this.getMediaStreamCallback?.(data.from, null, track.kind === "video" ? "video" : "audio");
                 pc.getTransceivers().forEach(transceiver => transceiver.stop());
                 pc.close();
                 this.peerConnection = this.peerConnection.filter(p => p !== pc);
@@ -271,10 +399,10 @@ export class WebRTCService {
             }
             track.onmute = () => {
                 console.log("Track muted")
-                this.getMediaStreamCallback?.(data.from, null);
+                this.getMediaStreamCallback?.(data.from, null, track.kind === "video" ? "video" : "audio");
             }
             console.log("Received track")
-            this.getMediaStreamCallback?.(data.from, track);
+            this.getMediaStreamCallback?.(data.from, track, track.kind === "video" ? "video" : "audio");
         };
 
         pc.onicecandidate = ({ candidate }) => {
@@ -284,6 +412,7 @@ export class WebRTCService {
                     type: WebRTCEvents.ICE_CANDIDATE,
                     from: data.to,
                     to: data.from,
+                    name: data.name,
                     data: candidate,
                 })
             }
@@ -319,7 +448,7 @@ export class WebRTCService {
 
         setInterval(async () => {
             const roundTripTimeMeasurements: number[] = [];
-            (await (pc.getStats())).forEach((report: any) => {
+            (await (pc.getStats())).forEach((report) => {
                 if (report.type === 'outbound-rtp') {
                     const newTrace = {
                         qualityLimitationReason: report.qualityLimitationReason,
@@ -374,31 +503,39 @@ export class WebRTCService {
 
                 ewmaRttInMs = (0.9 * ewmaRttInMs) + (0.1 * avgRoundTripTimeInMs);
 
-                // eslint-disable-next-line no-console
+
                 console.info(`avgRoundTripTime: ${avgRoundTripTimeInMs.toFixed(2)}, ewmaRttInMs: ${ewmaRttInMs.toFixed(2)}, bandwidthLimited: ${isBandwidthLimited}`);
             }
         }, 1000);
     }
 
-    // private setupDataChannel(): void {
-    //     if (!this.dataChannel) return
+    private setupDataChannel(): void {
+        if (!this.dataChannel) return
 
-    //     this.dataChannel.onopen = () => {
-    //         console.log("Data channel opened")
-    //     }
+        this.dataChannel.onopen = () => {
+            console.log("Data channel opened")
+        }
 
-    //     this.dataChannel.onclose = () => {
-    //         console.log("Data channel closed")
-    //     }
+        this.dataChannel.onclose = () => {
+            console.log("Data channel closed")
+        }
 
-    //     this.dataChannel.onmessage = (event) => {
-    //         try {
-    //             const message = JSON.parse(event.data)
-    //         } catch (error) {
-    //             console.error("Error parsing data channel message:", error)
-    //         }
-    //     }
-    // }
+        this.dataChannel.onmessage = (event) => {
+            try {
+                const message: DataChannelMessage = JSON.parse(event.data)
+                if (!message.connectToServer) {
+                    this.onDataChannelMessageCallback?.(message)
+                }
+            } catch (error) {
+                console.error("Error parsing data channel message:", error)
+            }
+        }
+    }
+
+    public onDataChannelMessage(callback: (message: DataChannelMessage) => void): void {
+        this.onDataChannelMessageCallback = callback
+    }
+
 
     // Handle signaling messages
     private async handleSignalingMessage(event: MessageEvent): Promise<void> {
@@ -407,6 +544,9 @@ export class WebRTCService {
             switch (data.type) {
                 case WebRTCEvents.USER_JOINED:
                     const pc = await this.setupPeerConnectionListeners(data);
+                    if (this.peerConnection.length === 1) {
+                        this.createDataChannel(pc);
+                    }
                     this.createOffer(pc, data)
                     break
                 case WebRTCEvents.OFFER:
@@ -427,9 +567,6 @@ export class WebRTCService {
                     this.peerConnection = this.peerConnection.filter(pc => pc.id !== data.from);
                     this.onParticipantLeaveCallback?.(data.from)
                     break;
-                case WebRTCEvents.DATA_MESSAGE:
-                    this.handleDataMessage(data)
-                    break
                 default:
                     console.log("Unknown message type:", data.type)
             }
@@ -441,7 +578,12 @@ export class WebRTCService {
     private async handleOffer(data: Message): Promise<void> {
         try {
             const pc = await this.setupPeerConnectionListeners(data);
-            await pc.setRemoteDescription(data.data)
+            pc.ondatachannel = (event) => {
+                console.log("Data channel opened")
+                this.dataChannel = event.channel;
+                this.setupDataChannel()
+            }
+            await pc.setRemoteDescription(data.data as RTCSessionDescriptionInit)
 
             const answer = await pc.createAnswer()
             await pc.setLocalDescription(answer)
@@ -451,6 +593,7 @@ export class WebRTCService {
                 type: WebRTCEvents.ANSWER,
                 from: data.to,
                 to: data.from,
+                name: data.name,
                 data: answer,
             })
         } catch (error) {
@@ -462,7 +605,9 @@ export class WebRTCService {
     private async handleAnswer(data: Message): Promise<void> {
         try {
             console.log("Received answer")
-            await this.peerConnection.find(p => p.id === data.from)?.setRemoteDescription(new RTCSessionDescription(data.data))
+            const pc = this.peerConnection.find(p => p.id === data.from)
+            if (!pc) return
+            await pc.setRemoteDescription(new RTCSessionDescription(data.data as RTCSessionDescriptionInit))
         } catch (error) {
             console.error("Error handling answer:", error)
         }
@@ -471,26 +616,24 @@ export class WebRTCService {
 
     private async handleICECandidate(data: Message): Promise<void> {
         if (!this.peerConnection.find(p => p.id === data.from)?.remoteDescription) return;
+
         try {
-            await this.peerConnection.find(p => p.id === data.from)?.addIceCandidate(new RTCIceCandidate(data.data))
+            const pc = this.peerConnection.find(p => p.id === data.from)
+            if (!pc) return
+            await pc.addIceCandidate(new RTCIceCandidate(data.data as RTCIceCandidateInit))
         } catch (error) {
             console.error("Error handling ICE candidate:", error);
         }
     }
 
-
-    private handleDataMessage(data: any): void {
+    private createDataChannel(pc: RTCPeerConnection): void {
+        try {
+            this.dataChannel = pc.createDataChannel("data")
+            this.setupDataChannel()
+        } catch (error) {
+            console.error("Error creating data channel:", error)
+        }
     }
-
-    // private createDataChannel(): void {
-
-    //     try {
-    //         this.dataChannel = this.peerConnection.createDataChannel("data")
-    //         this.setupDataChannel()
-    //     } catch (error) {
-    //         console.error("Error creating data channel:", error)
-    //     }
-    // }
 
     private async createOffer(pc: RTCPeerConnection, data: Message): Promise<void> {
         try {
@@ -501,6 +644,7 @@ export class WebRTCService {
                 type: WebRTCEvents.OFFER,
                 from: data.to,
                 to: data.from,
+                name: data.name,
                 data: offer,
             })
         } catch (error) {
