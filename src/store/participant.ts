@@ -1,12 +1,7 @@
 import { WebRTCService } from '@/lib/webrtc-service'
 import { create } from 'zustand'
 
-interface VideoTracks {
-    id: number
-    track: MediaStreamTrack | null
-}
-
-interface AudioTracks {
+interface Track {
     id: number
     track: MediaStreamTrack | null
 }
@@ -18,11 +13,11 @@ interface Participant {
 
 interface ParticipantStore {
     participants: Participant[]
-    videoTracks: VideoTracks[]
-    audioTracks: AudioTracks[]
+    videoTracks: Track[]
+    audioTracks: Track[]
     addParticipant: (participant: Participant) => void
     removeParticipant: (id: number) => void
-    updateTracks: (id: number, track: MediaStreamTrack | null, kind: "video" | "audio") => void
+    updateTracks: (track: Track, kind: string) => void
 }
 
 const useParticipantStore = create<ParticipantStore>()((set) => ({
@@ -35,13 +30,9 @@ const useParticipantStore = create<ParticipantStore>()((set) => ({
         participants: [...state.participants, participant]
     })),
     removeParticipant: (id) => set((state) => ({ participants: state.participants.filter((p) => p.id !== id) })),
-    updateTracks: (id, track, kind) => set((state) => ({
-        [kind === "video" ? "videoTracks" : "audioTracks"]: state[kind === "video" ? "videoTracks" : "audioTracks"].map((t) => {
-            if (t.id === id) {
-                return { ...t, track }
-            }
-            return t
-        }),
+    updateTracks: ({ id, track }, kind) => set((state) => ({
+        [kind === "video" ? "videoTracks" : "audioTracks"]: state[kind === "video" ? "videoTracks" : "audioTracks"]
+            .map((t) => t.id === id ? { ...t, track } : t),
     })),
 }))
 

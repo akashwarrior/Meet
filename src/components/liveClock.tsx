@@ -3,9 +3,12 @@
 import { useEffect, useState } from "react";
 
 export function LiveClock() {
-    const [time, setTime] = useState(new Date());
+    const [time, setTime] = useState<Date | null>(null); // Cannot initialize here -[Hydration Issue]
 
     useEffect(() => {
+        if (!time) {
+            setTime(new Date())
+        }
         const secondsLeft = 60 - new Date().getSeconds();
         const updateInterval = (secondsLeft * 1000);
 
@@ -16,7 +19,7 @@ export function LiveClock() {
         };
     }, [time]);
 
-    return (
+    return time && (
         <div className="text-sm md:text-base text-muted-foreground">
             {time.toLocaleTimeString("en-IN", { hour12: false, hour: "2-digit", minute: "2-digit" })}
             <span className="hidden md:inline">

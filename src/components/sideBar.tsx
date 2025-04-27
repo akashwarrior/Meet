@@ -1,16 +1,18 @@
+'use client'
+
 import { cn } from "@/lib/utils";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { LogOut, MessageSquare, Mic, MicOff, MoreHorizontal, Send, Users, Video, VideoOff, X } from "lucide-react";
 import { Button } from "./ui/button";
-import { Avatar, AvatarFallback } from "./ui/avatar";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
-import { useEffect, useRef, useState } from "react";
-import useParticipantStore, { useSidebarOpenStore, useWebRTCStore } from "@/store/participant";
 import { DataChannelMessage } from "@/lib/webrtc-service";
+import { Avatar, AvatarFallback } from "./ui/avatar";
+import { memo, useEffect, useRef, useState } from "react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import useParticipantStore, { useSidebarOpenStore, useWebRTCStore } from "@/store/participant";
+import { LogOut, MessageSquare, Mic, MicOff, MoreHorizontal, Send, Users, Video, VideoOff, X } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
 
-export default function SideBar() {
+const SideBar = memo(() => {
     // Refs
     const chatEndRef = useRef<HTMLDivElement>(null)
 
@@ -150,4 +152,6 @@ export default function SideBar() {
             </Tabs>
         </div>
     )
-}
+})
+
+export default SideBar

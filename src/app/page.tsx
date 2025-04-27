@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation"
 import { useRef, useState, useCallback } from "react"
 import { toast } from "sonner"
 import { motion } from 'motion/react';
+import { Video, Keyboard, ChevronDown, Check, Copy, X } from "lucide-react"
 import { Dialog, DialogContent, DialogFooter, DialogTitle, DialogClose } from "@/components/ui/dialog"
 import Image from "next/image";
 
@@ -18,14 +19,6 @@ import {
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu"
 
-import {
-  LucideVideo,
-  LucideKeyboard,
-  LucideChevronDown,
-  LucideCheck,
-  LucideCopy,
-  LucideX
-} from "lucide-react"
 
 
 export default function Home() {
@@ -44,6 +37,9 @@ export default function Home() {
       headers: {
         "Content-Type": "application/json",
       },
+      body: JSON.stringify({
+        hostId: "12345",
+      }),
     });
     const res = await response.json();
     if (response.status === 200) {
@@ -153,11 +149,11 @@ export default function Home() {
           </p>
           <div className="flex flex-col xl:flex-row gap-3 xl:items-center relative">
             <DropdownMenu modal={false}>
-              <DropdownMenuTrigger asChild>
+              <DropdownMenuTrigger asChild >
                 <Button className="flex items-center justify-center flex-1 h-fit py-4 hover:ring-4 hover:ring-primary/50 focus-visible:ring-primary/50">
-                  <LucideVideo className="mr-2 h-5 w-5" />
+                  <Video className="mr-2 h-5 w-5" />
                   New meeting
-                  <LucideChevronDown className="ml-2 h-4 w-4" />
+                  <ChevronDown className="ml-2 h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent
@@ -189,11 +185,12 @@ export default function Home() {
 
             {/* </Link> */}
             <div className="flex items-center bg-background border-3 rounded-2xl flex-1/12 focus-within:border-primary transition-[border-color] duration-200 px-2">
-              <LucideKeyboard size={28} />
+              <Keyboard size={28} />
               <Input
                 type="text"
                 placeholder="Enter a code or link"
                 ref={meetingCodeRef}
+                disabled={loading}
                 className="border-none h-full focus-visible:ring-0 bg-background py-4"
               />
             </div>
@@ -204,7 +201,6 @@ export default function Home() {
               onClick={joinMeeting}>
               Join
             </Button>
-
           </div>
 
           <div className="mt-10 border-t border-border pt-6">
@@ -221,7 +217,7 @@ export default function Home() {
           <Image
             width={500}
             height={500}
-            loading="lazy"
+            priority
             src="/img.jpeg"
             alt="People in a video conference"
             className="w-full rounded-lg"
@@ -242,7 +238,7 @@ export default function Home() {
               Here&apos;s your joining information
               <DialogClose asChild>
                 <Button variant="ghost" size="icon" className="focus-visible:ring-0">
-                  <LucideX className="h-4 w-4" />
+                  <X className="h-4 w-4" />
                 </Button>
               </DialogClose>
             </DialogTitle>
@@ -260,7 +256,7 @@ export default function Home() {
                 size="icon"
                 className={copied ? "text-green-600" : ""}
               >
-                {copied ? <LucideCheck className="h-5 w-5" /> : <LucideCopy className="h-5 w-5" />}
+                {copied ? <Check className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
               </Button>
             </div>
 

@@ -8,17 +8,16 @@ import { useMobile } from "@/hooks/use-mobile"
 import { LucideChevronLeft, LucideChevronRight } from "lucide-react"
 import { Participant } from "./participant"
 import useParticipantStore from "@/store/participant"
+import { motion } from "motion/react"
 
 const VideoGrid = memo(({ participantsLength }: { participantsLength: number }) => {
     const mobile = useMobile();
     const [currentPage, setCurrentPage] = useState(0)
-    console.log("Rendering video grid", participantsLength)
 
     const participantsPerPage = mobile ? 6 : 9
     const totalPages = participantsLength / participantsPerPage
 
     const currentParticipants = useMemo(() => {
-        console.log("Calculating current participants")
         const start = currentPage * participantsPerPage
         const end = start + participantsPerPage
 
@@ -55,7 +54,13 @@ const VideoGrid = memo(({ participantsLength }: { participantsLength: number }) 
 
     return (
         <main className="flex-1 flex flex-grow overflow-hidden">
-            <div className={cn("h-full w-full p-2 grid gap-2", getGridClass)}>
+            <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={{ duration: 0.2 }}
+                className={cn("h-full w-full p-2 grid gap-2", getGridClass)}
+            >
                 {currentParticipants.map(
                     (participant) =>
                         <Participant
@@ -64,7 +69,7 @@ const VideoGrid = memo(({ participantsLength }: { participantsLength: number }) 
                             onRemove={() => removeParticipant(participant.id)}
                         />
                 )}
-            </div>
+            </motion.div>
 
             {totalPages > 1 && (
                 <div className="absolute bottom-20 left-0 w-full flex justify-center items-center space-x-2">
@@ -79,7 +84,7 @@ const VideoGrid = memo(({ participantsLength }: { participantsLength: number }) 
 
                     <div className="flex space-x-1">
                         {Array.from({ length: totalPages }, (_, index) => (
-                            <div
+                            <motion.div
                                 key={index}
                                 className={cn("h-2 w-2 rounded-full shadow border", currentPage === index ? "bg-primary" : "bg-gray-400")}
                             />

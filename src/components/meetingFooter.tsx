@@ -7,7 +7,7 @@ import { Button } from "./ui/button";
 import { LiveClock } from "./liveClock";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "./ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Maximize, MessageSquare, Mic, MicOff, Monitor, MoreVertical, Phone, Users, Video, VideoOff } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { useSidebarOpenStore, useWebRTCStore } from "@/store/participant";
@@ -33,8 +33,9 @@ const MeetingFooter = memo(() => {
         // Get audio and video devices
         navigator.mediaDevices.enumerateDevices()
             .then((devices) => {
-                const audio = devices.filter((device) => device.kind === "audioinput")
-                const video = devices.filter((device) => device.kind === "videoinput")
+                const audio = devices.filter((device) => device.kind === "audioinput" && device.deviceId)
+                const audioOutputs = devices.filter((device) => device.kind === "audiooutput" && device.deviceId)
+                const video = devices.filter((device) => device.kind === "videoinput" && device.deviceId)
                 console.log("Audio devices: ", audio)
                 console.log("Video devices: ", video)
                 setAudioDevices(audio)

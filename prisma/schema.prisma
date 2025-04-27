@@ -35,6 +35,6 @@ model Meeting {
   createdAt DateTime @default(now())
 
   // Relations
-  hostId String?
-  host   User?   @relation(fields: [hostId], references: [id])
+  hostId String
+  host   User   @relation(fields: [hostId], references: [id])
 }

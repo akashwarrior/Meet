@@ -45,11 +45,22 @@
   --radius-sm: calc(var(--radius) - 4px);
 
   --animate-ripple: ripple 500ms forwards ease-out;
+  --animate-roatate: roatate 15s ease-in-out infinite forwards;
 
   @keyframes ripple {
     to {
       opacity: 0;
       transform: scale(5);
+    }
+  }
+
+  @keyframes roatate {
+    from {
+      transform: rotate(0) translateZ(0);
+    }
+
+    to {
+      transform: rotate(1turn) translateZ(0);
     }
   }
 }
@@ -121,7 +132,7 @@
 }
 
 .dark {
-  --background: #181818;
+  --background: #161616;
   --foreground: oklch(0.985 0.002 247.839);
   --card: oklch(0.21 0.034 264.665);
   --card-foreground: oklch(0.985 0.002 247.839);

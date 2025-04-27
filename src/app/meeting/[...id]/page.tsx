@@ -10,21 +10,22 @@ export default async function MeetingRoom({ params }: { params: Promise<{ id: st
     redirect("/");
   }
 
-  const meeting = await prisma.meeting.findUnique({
-    where: {
-      id: meetingId
-    },
-    select: {
-      id: true
-    }
-  })
+  // const meeting = await prisma.meeting.findUnique({
+  //   where: {
+  //     id: meetingId
+  //   },
+  //   select: {
+  //     id: true,
+  //     hostId: true,
+  //   }
+  // })
 
-  if (!meeting) {
-    console.log("Icon SVG detected, redirecting to homepage")
-    redirect("/")
-  }
+  // if (!meeting) {
+  //   console.log("Icon SVG detected, redirecting to homepage")
+  //   redirect("/")
+  // }
 
   return (
-    <Meeting meetingId={meeting.id} />
+    <Meeting meetingId={meetingId} />
   )
 }
