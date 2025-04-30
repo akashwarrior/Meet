@@ -2,8 +2,9 @@
 
 import { useTheme } from "next-themes"
 import { Moon, Sun } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import { useLayoutEffect, useState } from "react"
+import { motion } from "motion/react"
+import { Button } from "./ui/button"
 
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme()
@@ -13,10 +14,17 @@ export function ThemeToggle() {
     setMounted(true);
   }, []);
 
-  return (
-    <Button variant="ghost" className="h-9 w-9"
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
-      {mounted ? (theme === "dark" ? <Moon /> : <Sun />) : <Sun />}
-    </Button>
+  return mounted && (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 10 }}
+      transition={{ duration: 0.2, ease: "easeInOut" }}
+    >
+      <Button variant="ghost" className="h-9 w-9"
+        onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
+        {theme === "dark" ? <Moon /> : <Sun />}
+      </Button>
+    </motion.div>
   )
 }

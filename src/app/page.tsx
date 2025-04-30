@@ -1,15 +1,15 @@
 'use client';
 
+import { useRef, useState, useCallback } from "react"
+import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ThemeToggle } from "@/components/theme-toggle"
-import { LiveClock } from "@/components/liveClock"
-import { useRouter } from "next/navigation"
-import { useRef, useState, useCallback } from "react"
-import { toast } from "sonner"
 import { motion } from 'motion/react';
 import { Video, Keyboard, ChevronDown, Check, Copy, X } from "lucide-react"
-import { Dialog, DialogContent, DialogFooter, DialogTitle, DialogClose } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/components/ui/dialog"
+import { useSession } from "next-auth/react";
+import Header from "@/components/header";
 import Image from "next/image";
 
 import {
@@ -20,37 +20,43 @@ import {
 } from "@/components/ui/dropdown-menu"
 
 
-
 export default function Home() {
   const router = useRouter()
+  const { data: session } = useSession()
   const [meetingLink, setMeetingLink] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [copied, setCopied] = useState(false)
   const meetingCodeRef = useRef<HTMLInputElement>(null)
 
-
   // Function to generate a meeting link
   const generateMeetingLink: () => Promise<string | null> = useCallback(async () => {
-    setLoading(true)
-    const response = await fetch("/api/meetings", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        hostId: "12345",
-      }),
-    });
-    const res = await response.json();
-    if (response.status === 200) {
-      return res.link
-    } else {
-      toast.error(res.error, {
-        description: "Please try again later",
+    if (!session?.user?.email) {
+      toast.error("You need to be logged in to create a meeting", {
+        description: "Please log in and try again",
       })
       return null
     }
-  }, []);
+    setLoading(true)
+    try {
+      const response = await fetch("/api/meetings", { method: "POST" });
+      const res = await response.json();
+      if (response.status === 200) {
+        return res.link
+      } else {
+        toast.error(res.error, {
+          description: "Please try again later",
+        })
+        return null
+      }
+    } catch (error) {
+      toast.error("Failed to create meeting", {
+        description: String(error),
+      })
+      return null
+    } finally {
+      setLoading(false)
+    }
+  }, [session]);
 
 
   // Function to start an instant meeting
@@ -58,8 +64,6 @@ export default function Home() {
     const link = await generateMeetingLink();
     if (link) {
       router.push(`/meeting/${link.split('/').pop()}`)
-    } else {
-      setLoading(false)
     }
   }, [router, generateMeetingLink]);
 
@@ -70,7 +74,6 @@ export default function Home() {
     if (link) {
       setMeetingLink(link);
     }
-    setLoading(false)
   }, [generateMeetingLink]);
 
 
@@ -85,17 +88,29 @@ export default function Home() {
       })
       return
     }
-    setLoading(true)
-    const response = await fetch(`/api/meetings/${meetingCode}`);
-    const res = await response.json();
-    if (response.status === 200) {
-      router.push(`/meeting/${meetingCode.split('/').pop()}`)
-    } else {
-      toast.error(res.error, {
-        description: "Please check the meeting code and try again",
+
+    try {
+      setLoading(true)
+      const response = await fetch(`/api/meetings/${meetingCode}`);
+      const res = await response.json();
+
+      if (response.status === 200) {
+        toast.success(res.message, {
+          description: "Redirecting to meeting...",
+        });
+        router.push(`/meeting/${meetingCode.split('/').pop()}`)
+      } else {
+        toast.error(res.error, {
+          description: "Please check the meeting code and try again",
+        })
+      }
+    } catch (error) {
+      toast.error("Failed to join meeting", {
+        description: String(error),
       })
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }, [router]);
 
 
@@ -120,24 +135,8 @@ export default function Home() {
 
 
   return (
-    <div className="bg-background">
-      <header>
-        <div className="px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center">
-            <svg viewBox="0 0 87 30" className="h-6 w-auto text-foreground" fill="currentColor">
-              <path d="M6.94 14.97c0-3.26-.87-5.83-2.6-7.69C2.6 5.4.7 4.5 0 4.5v21c.7 0 2.6-.9 4.34-2.78 1.73-1.86 2.6-4.43 2.6-7.75zm12 0c0 3.32.87 5.89 2.6 7.75C23.4 24.6 25.3 25.5 26 25.5v-21c-.7 0-2.6.9-4.34 2.78-1.73 1.86-2.6 4.43-2.6 7.75zm8.06 0c0-3.32-.87-5.89-2.6-7.75C22.6 5.4 20.7 4.5 20 4.5v21c.7 0 2.6-.9 4.34-2.78 1.73-1.86 2.6-4.43 2.6-7.75zm12 0c0 3.32.87 5.89 2.6 7.75C43.4 24.6 45.3 25.5 46 25.5v-21c-.7 0-2.6.9-4.34 2.78-1.73 1.86-2.6 4.43-2.6 7.75zm8.06 0c0-3.32-.87-5.89-2.6-7.75C42.6 5.4 40.7 4.5 40 4.5v21c.7 0 2.6-.9 4.34-2.78 1.73-1.86 2.6-4.43 2.6-7.75zm12 0c0 3.32.87 5.89 2.6 7.75C63.4 24.6 65.3 25.5 66 25.5v-21c-.7 0-2.6.9-4.34 2.78-1.73 1.86-2.6 4.43-2.6 7.75zm8.06 0c0-3.32-.87-5.89-2.6-7.75C62.6 5.4 60.7 4.5 60 4.5v21c.7 0 2.6-.9 4.34-2.78 1.73-1.86 2.6-4.43 2.6-7.75z" />
-            </svg>
-            <span className="ml-2 text-xl font-medium text-foreground">Meet</span>
-          </div>
-          <div className="flex items-center space-x-4">
-            <LiveClock />
-            <ThemeToggle />
-            <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center text-white font-medium">
-              A
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="bg-background relative">
+      <Header />
 
       <main className="mx-auto flex flex-col md:px-4 py-12 md:py-0 md:flex-row items-center justify-between max-w-7xl">
         <div className="max-w-lg md:mb-0 m-10">
@@ -205,10 +204,17 @@ export default function Home() {
 
           <div className="mt-10 border-t border-border pt-6">
             <p className="text-muted-foreground">
-              <span className="text-primary hover:underline cursor-pointer">
+              <span
+                onClick={() => {
+                  toast.info("This feature is not available yet", {
+                    description: "Please check back later",
+                  })
+                }}
+                className="text-primary hover:underline cursor-pointer"
+              >
                 Learn more
               </span>{" "}
-              about Google Meet
+              about Meet
             </p>
           </div>
         </div>
@@ -236,11 +242,14 @@ export default function Home() {
           >
             <DialogTitle className="flex justify-between items-center mb-3 text-xl font-semibold">
               Here&apos;s your joining information
-              <DialogClose asChild>
-                <Button variant="ghost" size="icon" className="focus-visible:ring-0">
-                  <X className="h-4 w-4" />
-                </Button>
-              </DialogClose>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setMeetingLink(null)}
+                className="focus-visible:ring-0"
+              >
+                <X className="h-4 w-4" />
+              </Button>
             </DialogTitle>
 
             <p className="text-gray-600 dark:text-gray-400 mb-4">
@@ -261,11 +270,13 @@ export default function Home() {
             </div>
 
             <DialogFooter className="mt-6 flex justify-end space-x-2">
-              <DialogClose asChild>
-                <Button type="button" variant="secondary">
-                  Close
-                </Button>
-              </DialogClose>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setMeetingLink(null)}
+              >
+                Close
+              </Button>
               <Button
                 onClick={() => router.push(`/meeting/${meetingLink?.split('/').pop()}`)}
               >

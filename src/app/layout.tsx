@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import localFont from 'next/font/local'
 import Providers from "@/components/providers";
 import { Toaster } from "@/components/ui/sonner";
+import { getServerSession } from "next-auth";
+import { NEXT_AUTH } from "@/lib/auth";
 import "./globals.css";
 
 const myFont = localFont({
@@ -19,16 +21,18 @@ const myFont = localFont({
 
 export const metadata: Metadata = {
   icons: './icon.svg',
-  title: "MeetSync - Professional Video Conferencing",
-  description: "Connect securely with end-to-end encryption. Host video meetings, share your screen, and collaborate with just a few clicks.",
-  keywords: "video conferencing, online meetings, screen sharing, collaboration, end-to-end encryption, secure communication",
+  title: "Meet - Professional Video Conferencing",
+  description: "Connect securely with end-to-end encryption. Host video meetings and collaborate with just a few clicks.",
+  keywords: "video conferencing, online meetings, collaboration, end-to-end encryption, secure communication",
 }
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const session = await getServerSession(NEXT_AUTH);
+
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={myFont.className}>
-        <Providers>
+        <Providers session={session}>
           {children}
         </Providers>
         <Toaster richColors theme="light" />

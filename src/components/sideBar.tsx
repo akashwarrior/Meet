@@ -4,27 +4,22 @@ import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "./ui/button";
-import { DataChannelMessage } from "@/lib/webrtc-service";
+import { DataChannelMessage, WebRTCService } from "@/lib/webrtc-service";
 import { Avatar, AvatarFallback } from "./ui/avatar";
 import { memo, useEffect, useRef, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import useParticipantStore, { useSidebarOpenStore, useWebRTCStore } from "@/store/participant";
 import { LogOut, MessageSquare, Mic, MicOff, MoreHorizontal, Send, Users, Video, VideoOff, X } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
+import useParticipantStore from "@/store/participant";
+import useSidebarOpenStore from "@/store/sideBar";
 
-const SideBar = memo(() => {
-    // Refs
+const SideBar = memo(({ service }: { service: WebRTCService }) => {
     const chatEndRef = useRef<HTMLDivElement>(null)
-
-    // UI States
-    const [message, setMessage] = useState("")
+    const messageRef = useRef<HTMLInputElement>(null)
     const [messages, setMessages] = useState<DataChannelMessage[]>([])
-
     const participants = useParticipantStore((state) => state.participants)
-    const service = useWebRTCStore((state) => state.webRTCService)
     const { sidebarOpen, activeTab, setSidebarOpen, setActiveTab } = useSidebarOpenStore()
 
-    // Scroll chat to bottom when new messages arrive
     useEffect(() => {
         if (chatEndRef.current) {
             chatEndRef.current.scrollIntoView({ behavior: "smooth" })
@@ -32,25 +27,25 @@ const SideBar = memo(() => {
     }, [messages])
 
     useEffect(() => {
-        if (!service) return
         service.onDataChannelMessage((message: DataChannelMessage) => {
             setMessages((prevMessages) => [...prevMessages, message])
         });
     }, [service])
 
     // Send a chat message
-    const handleSendMessage = (e: React.FormEvent) => {
+    const SendMessage = (e: React.FormEvent) => {
         e.preventDefault()
+        const message = messageRef.current?.value || ""
         if (message.trim() && service) {
             const newMessage: DataChannelMessage = {
-                sender: "You",
+                sender: service.userName!,
+                senderId: service.userId!,
                 content: message,
                 timestamp: Date.now(),
-                connectToServer: false,
             }
             setMessages((prevMessages) => [...prevMessages, newMessage])
             service.sendDataMessage(newMessage)
-            setMessage("")
+            messageRef.current!.value = ""
         }
     }
 
@@ -63,7 +58,7 @@ const SideBar = memo(() => {
                     <TabsList className="w-full">
                         <TabsTrigger value="participants" className="flex-1">
                             <Users className="h-4 w-4 mr-2" />
-                            People ({participants.length + 1})
+                            People ({participants.length})
                         </TabsTrigger>
                         <TabsTrigger value="chat" className="flex-1">
                             <MessageSquare className="h-4 w-4 mr-2" />
@@ -121,14 +116,14 @@ const SideBar = memo(() => {
                     <ScrollArea className="flex-1">
                         <div className="p-4 space-y-4">
                             {messages.map((msg, idx) => (
-                                <div key={idx} className="flex flex-col">
+                                <div key={idx} className={`flex flex-col ${msg.senderId === service.userId ? "bg-primary/15" : "bg-gray-100 dark:bg-neutral-800"} rounded-lg py-3 px-4`}>
                                     <div className="flex items-center mb-1">
-                                        <span className={cn("font-medium mr-2", msg.connectToServer && "text-blue-500 dark:text-blue-400")}>
+                                        <span className={cn("font-medium mr-2", msg.senderId === service.userId && "text-blue-500 dark:text-blue-400")}>
                                             {msg.sender}
                                         </span>
-                                        <span className="text-xs text-muted-foreground">{new Date(msg.timestamp).toLocaleTimeString()}</span>
+                                        <span className="text-xs text-muted-foreground">{new Date(msg.timestamp).toLocaleTimeString("en-IN", { hour12: true, hour: "2-digit", minute: "2-digit" })}</span>
                                     </div>
-                                    <p className={cn("text-foreground", msg.connectToServer && "text-muted-foreground italic")}>
+                                    <p className={cn("text-foreground", msg.senderId === service.userId && "text-muted-foreground italic")}>
                                         {msg.content}
                                     </p>
                                 </div>
@@ -136,13 +131,12 @@ const SideBar = memo(() => {
                             <div ref={chatEndRef} />
                         </div>
                     </ScrollArea>
-                    <form onSubmit={handleSendMessage} className="p-4 border-t border-border flex items-center">
+                    <form onSubmit={SendMessage} className="p-4 border-t border-border flex items-center">
                         <Input
                             type="text"
                             placeholder="Send a message to everyone"
-                            value={message}
-                            onChange={(e) => setMessage(e.target.value)}
-                            className="flex-1 mr-2"
+                            ref={messageRef}
+                            className="flex-1 mr-2 focus-visible:ring-primary focus-visible:border-primary border-primary/50"
                         />
                         <Button type="submit" size="icon" variant="ghost">
                             <Send className="h-5 w-5" />
@@ -154,4 +148,5 @@ const SideBar = memo(() => {
     )
 })
 
+SideBar.displayName = "SideBar"
 export default SideBar

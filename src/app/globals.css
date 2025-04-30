@@ -45,7 +45,8 @@
   --radius-sm: calc(var(--radius) - 4px);
 
   --animate-ripple: ripple 500ms forwards ease-out;
-  --animate-roatate: roatate 15s ease-in-out infinite forwards;
+  --animate-bg-effect: bg-effect 15s ease-in-out infinite forwards;
+  --animate-rotate: rotate 1s linear infinite;
 
   @keyframes ripple {
     to {
@@ -54,13 +55,23 @@
     }
   }
 
-  @keyframes roatate {
+  @keyframes bg-effect {
     from {
       transform: rotate(0) translateZ(0);
     }
 
     to {
       transform: rotate(1turn) translateZ(0);
+    }
+  }
+
+  @keyframes rotate {
+    0% {
+      transform: rotate(0deg);
+    }
+
+    100% {
+      transform: rotate(360deg);
     }
   }
 }
@@ -98,10 +109,6 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
-/*
-  ---break---
-*/
-
 :root {
   --radius: 0.625rem;
   --background: oklch(1 0 0);
@@ -120,7 +127,7 @@
   --accent-foreground: oklch(0.21 0.034 264.665);
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.928 0.006 264.531);
-  --ring: oklch(0.707 0.022 261.325);
+  --ring: rgb(26, 115, 232);
   --sidebar: oklch(0.985 0.002 247.839);
   --sidebar-foreground: oklch(0.13 0.028 261.692);
   --sidebar-primary: oklch(0.21 0.034 264.665);
@@ -128,7 +135,7 @@
   --sidebar-accent: oklch(0.967 0.003 264.542);
   --sidebar-accent-foreground: oklch(0.21 0.034 264.665);
   --sidebar-border: oklch(0.928 0.006 264.531);
-  --sidebar-ring: oklch(0.707 0.022 261.325);
+  --sidebar-ring: rgb(26, 115, 232);
 }
 
 .dark {
@@ -159,7 +166,7 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring/50 scroll-smooth;
   }
 
   body {

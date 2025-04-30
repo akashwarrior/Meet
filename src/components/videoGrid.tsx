@@ -6,28 +6,29 @@ import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { useMobile } from "@/hooks/use-mobile"
 import { LucideChevronLeft, LucideChevronRight } from "lucide-react"
-import { Participant } from "./participant"
-import useParticipantStore from "@/store/participant"
 import { motion } from "motion/react"
+import Participant from "./participant"
+import useParticipantStore from "@/store/participant"
 
-const VideoGrid = memo(({ participantsLength }: { participantsLength: number }) => {
+const VideoGrid = memo(() => {
     const mobile = useMobile();
     const [currentPage, setCurrentPage] = useState(0)
+    const participants = useParticipantStore((state) => state.participants)
 
     const participantsPerPage = mobile ? 6 : 9
-    const totalPages = participantsLength / participantsPerPage
+    const totalPages = participants.length / participantsPerPage
 
     const currentParticipants = useMemo(() => {
         const start = currentPage * participantsPerPage
         const end = start + participantsPerPage
 
-        return useParticipantStore.getState().participants.slice(start, end)
-    }, [participantsLength, currentPage, participantsPerPage]);
+        return participants.slice(start, end)
+    }, [participants, currentPage, participantsPerPage]);
 
     // Remove a participant from the meeting
-    const removeParticipant = useCallback((participantId: number) => {
+    const removeParticipant = useCallback((participantId: string) => {
         toast.success("Participant removed", {
-            description: `Participant has been removed from the meeting`,
+            description: `${participantId} has been removed from the meeting`,
             duration: 2000,
         })
     }, []);
@@ -72,7 +73,7 @@ const VideoGrid = memo(({ participantsLength }: { participantsLength: number }) 
             </motion.div>
 
             {totalPages > 1 && (
-                <div className="absolute bottom-20 left-0 w-full flex justify-center items-center space-x-2">
+                <div className="absolute bottom-20 left-0 w-full flex justify-center items-center space-x-2 z-50">
                     <Button
                         size="icon"
                         className="rounded-full bg-primary text-white"
@@ -105,4 +106,5 @@ const VideoGrid = memo(({ participantsLength }: { participantsLength: number }) 
     )
 });
 
+VideoGrid.displayName = "VideoGrid"
 export default VideoGrid

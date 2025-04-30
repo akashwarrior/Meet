@@ -8,55 +8,57 @@ import { LiveClock } from "./liveClock";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { Maximize, MessageSquare, Mic, MicOff, Monitor, MoreVertical, Phone, Users, Video, VideoOff } from "lucide-react";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
-import { useSidebarOpenStore, useWebRTCStore } from "@/store/participant";
+import { MessageSquare, Mic, MicOff, Phone, Users, Video, VideoOff } from "lucide-react";
+import { WebRTCService } from "@/lib/webrtc-service";
+import useSidebarOpenStore from "@/store/sideBar";
+import useMeetingPrefsStore from "@/store/meetingPrefs";
 
-const MeetingFooter = memo(() => {
+const MeetingFooter = memo(({ service }: { service: WebRTCService }) => {
     const router = useRouter()
-    const service = useWebRTCStore((state) => state.webRTCService)
     const [showSettings, setShowSettings] = useState(false)
-
-    const [isMuted, setIsMuted] = useState(true)
-    const [isVideoOff, setIsVideoOff] = useState(true)
-    const [isScreenSharing, setIsScreenSharing] = useState(false)
-    const [isRecording, setIsRecording] = useState(false)
+    const {
+        audio: {
+            audioInputDevice,
+        },
+        video: {
+            videoInputDevice,
+        },
+        meeting: {
+            isAudioEnabled,
+            isVideoEnabled
+        },
+        setMeetingPrefs,
+        setAudioPrefs,
+        setVideoPrefs,
+    } = useMeetingPrefsStore()
     const { sidebarOpen, activeTab, setSidebarOpen, setActiveTab } = useSidebarOpenStore()
 
     // Device settings
     const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([])
     const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([])
-    const [selectedAudioDevice, setSelectedAudioDevice] = useState<string>("mic")
-    const [selectedVideoDevice, setSelectedVideoDevice] = useState<string>("camera")
 
     useEffect(() => {
         // Get audio and video devices
         navigator.mediaDevices.enumerateDevices()
             .then((devices) => {
                 const audio = devices.filter((device) => device.kind === "audioinput" && device.deviceId)
-                const audioOutputs = devices.filter((device) => device.kind === "audiooutput" && device.deviceId)
                 const video = devices.filter((device) => device.kind === "videoinput" && device.deviceId)
-                console.log("Audio devices: ", audio)
-                console.log("Video devices: ", video)
                 setAudioDevices(audio)
                 setVideoDevices(video)
-                setSelectedAudioDevice(audio[0]?.deviceId || "mic")
-                setSelectedVideoDevice(video[0]?.deviceId || "camera")
             })
 
-        navigator.mediaDevices.ondevicechange = (device) => {
-            console.log("Device changed: ", device)
+        navigator.mediaDevices.ondevicechange = () => {
             navigator.mediaDevices.enumerateDevices()
                 .then((devices) => {
                     const audio = devices.filter((device) => device.kind === "audioinput")
                     const video = devices.filter((device) => device.kind === "videoinput")
                     setAudioDevices(audio)
                     setVideoDevices(video)
-                    setSelectedAudioDevice(audio[0]?.deviceId || "mic")
-                    setSelectedVideoDevice(video[0]?.deviceId || "camera")
+                    setAudioPrefs({ audioInputDevice: audio[0] || "default" })
+                    setVideoPrefs({ videoInputDevice: video[0] || "default" })
                 })
         }
-    }, [isMuted, isVideoOff])
+    }, [isAudioEnabled, isVideoEnabled, setAudioPrefs, setVideoPrefs])
 
     // Toggle sidebar
     const toggleSidebar = (tab: string) => {
@@ -82,55 +84,59 @@ const MeetingFooter = memo(() => {
                 <div className="flex items-center space-x-1 md:space-x-2 mx-auto md:mx-0">
                     <Button
                         size="icon"
-                        variant={isMuted ? "destructive" : "secondary"}
+                        variant={!isAudioEnabled ? "destructive" : "secondary"}
                         onClick={() => {
-                            if (!service) return
-                            (!isMuted ? service.stopAudioStream : service.sendAudioStream).bind(service)()
-                            setIsMuted(!isMuted)
+                            if (!isAudioEnabled) {
+                                service.sendAudioStream({})
+                            } else {
+                                service.stopAudioStream()
+                            }
+                            setMeetingPrefs({ isAudioEnabled: !isAudioEnabled })
                         }}
                         className="rounded-full h-10 w-10 md:h-12 md:w-12"
                     >
-                        {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+                        {!isAudioEnabled ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
                     </Button>
                     <Button
                         size="icon"
-                        variant={isVideoOff ? "destructive" : "secondary"}
+                        variant={!isVideoEnabled ? "destructive" : "secondary"}
                         onClick={() => {
-                            if (!service) return
-                            (!isVideoOff ? service.stopVideoStream : service.sendVideoStream).bind(service)()
-                            setIsVideoOff(!isVideoOff)
+                            if (!isVideoEnabled) {
+                                service.sendVideoStream({})
+                            } else {
+                                service.stopVideoStream()
+                            }
+                            setMeetingPrefs({ isVideoEnabled: !isVideoEnabled })
                         }}
                         className="rounded-full h-10 w-10 md:h-12 md:w-12"
                     >
-                        {isVideoOff ? <VideoOff className="h-5 w-5" /> : <Video className="h-5 w-5" />}
+                        {!isVideoEnabled ? <VideoOff className="h-5 w-5" /> : <Video className="h-5 w-5" />}
                     </Button>
-                    <Button
-                        variant={isScreenSharing ? "destructive" : "secondary"}
-                        size="icon"
-                        className="rounded-full h-10 w-10 md:h-12 md:w-12"
-                    >
-                        <Monitor className="h-5 w-5" />
-                    </Button>
-
-                    <DropdownMenu modal={false}>
+                    {/* <DropdownMenu modal={false}>
                         <DropdownMenuTrigger asChild>
                             <Button variant="secondary" size="icon" className="rounded-full h-10 w-10 md:h-12 md:w-12">
                                 <MoreVertical className="h-5 w-5" />
                             </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                            <DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setIsRecording(!isRecording)}>
                                 {isRecording ? "Stop recording" : "Start recording"}
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => setShowSettings(true)}>Settings</DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => document.documentElement.requestFullscreen()}>
+                            <DropdownMenuItem onClick={() => {
+                                if (document.fullscreenElement) {
+                                    document.exitFullscreen()
+                                } else {
+                                    document.documentElement.requestFullscreen()
+                                }
+                            }}>
                                 <Maximize className="h-4 w-4 mr-2" />
-                                Full screen
+                                {document.fullscreenElement ? "Exit Fullscreen" : "Fullscreen"}
                             </DropdownMenuItem>
                         </DropdownMenuContent>
-                    </DropdownMenu>
+                    </DropdownMenu> */}
 
                     <Button
                         onClick={() => toggleSidebar("chat")}
@@ -173,7 +179,9 @@ const MeetingFooter = memo(() => {
                             <h3 className="text-sm font-medium">Audio</h3>
                             <div className="space-y-2">
                                 <Label htmlFor="microphone">Microphone</Label>
-                                <Select value={selectedAudioDevice} onValueChange={setSelectedAudioDevice}>
+                                <Select value={audioInputDevice?.deviceId} onValueChange={(deviceId) => {
+                                    setAudioPrefs({ audioInputDevice: audioDevices.find((device) => device.deviceId === deviceId) })
+                                }}>
                                     <SelectTrigger id="microphone">
                                         <SelectValue placeholder="Select microphone" />
                                     </SelectTrigger>
@@ -190,8 +198,19 @@ const MeetingFooter = memo(() => {
                             </div>
                             <div className="flex items-center justify-between mt-2">
                                 <span className="text-sm">Mute/Unmute</span>
-                                <Button variant="outline" size="sm">
-                                    {isMuted ? "Unmute" : "Mute"}
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                        if (!isAudioEnabled) {
+                                            service.sendAudioStream({})
+                                        } else {
+                                            service.stopAudioStream()
+                                        }
+                                        setMeetingPrefs({ isAudioEnabled: !isAudioEnabled })
+                                    }}
+                                >
+                                    {!isAudioEnabled ? "Unmute" : "Mute"}
                                 </Button>
                             </div>
                         </div>
@@ -199,7 +218,9 @@ const MeetingFooter = memo(() => {
                             <h3 className="text-sm font-medium">Video</h3>
                             <div className="space-y-2">
                                 <Label htmlFor="camera">Camera</Label>
-                                <Select value={selectedVideoDevice} onValueChange={setSelectedVideoDevice}>
+                                <Select value={videoInputDevice?.deviceId} onValueChange={(deviceId) => {
+                                    setVideoPrefs({ videoInputDevice: videoDevices.find((device) => device.deviceId === deviceId) })
+                                }}>
                                     <SelectTrigger id="camera">
                                         <SelectValue placeholder="Select camera" />
                                     </SelectTrigger>
@@ -216,13 +237,21 @@ const MeetingFooter = memo(() => {
                             </div>
                             <div className="flex items-center justify-between mt-2">
                                 <span className="text-sm">Camera</span>
-                                <Button variant="outline" size="sm">
-                                    {isVideoOff ? "Turn on" : "Turn off"}
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                        if (!isVideoEnabled) {
+                                            service.sendVideoStream({})
+                                        } else {
+                                            service.stopVideoStream()
+                                        }
+                                        setMeetingPrefs({ isVideoEnabled: !isVideoEnabled })
+                                    }}
+                                >
+                                    {!isVideoEnabled ? "Turn on" : "Turn off"}
                                 </Button>
                             </div>
-                        </div>
-                        <div className="space-y-2">
-                            <h3 className="text-sm font-medium">Layout</h3>
                         </div>
                     </div>
                 </DialogContent>
@@ -231,4 +260,5 @@ const MeetingFooter = memo(() => {
     )
 })
 
+MeetingFooter.displayName = "MeetingFooter"
 export default MeetingFooter

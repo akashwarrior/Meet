@@ -25,7 +25,6 @@ model User {
 
   // Relations
   Meeting Meeting[]
-
   // indexes
   @@index([email])
 }

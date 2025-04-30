@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from "react";
+import { motion } from "motion/react";
 
 export function LiveClock() {
     const [time, setTime] = useState<Date | null>(null); // Cannot initialize here -[Hydration Issue]
@@ -20,12 +21,18 @@ export function LiveClock() {
     }, [time]);
 
     return time && (
-        <div className="text-sm md:text-base text-muted-foreground">
+        <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2, ease: "easeInOut" }}
+            className="flex items-center gap-1 text-muted-foreground"
+        >
             {time.toLocaleTimeString("en-IN", { hour12: false, hour: "2-digit", minute: "2-digit" })}
             <span className="hidden md:inline">
                 {" • "}
                 {time.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
             </span>
-        </div>
+        </motion.div>
     );
 }

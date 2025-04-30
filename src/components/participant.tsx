@@ -1,47 +1,37 @@
 'use client'
 
-import { memo, Ref, useEffect, useRef, useState } from "react"
+import { memo } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar"
-import { MicOff, MoreHorizontal } from "lucide-react"
-import { Button } from "./ui/button"
+import { MicOff } from "lucide-react"
 import { motion } from "motion/react"
-import useParticipantStore from "@/store/participant"
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger
-} from "./ui/dropdown-menu"
+import useStreamTrackstore from "@/store/streamTrack"
 
-export const Participant = memo(({ participant: { name, id }, onMute, onRemove }: {
+const Participant = memo(({ participant: { name, id } }: {
     participant: {
-        id: number
+        id: string
         name: string
     }
     onMute?: () => void
     onRemove?: () => void
 }) => {
-    const audioTrack = useParticipantStore((state) => state.audioTracks.find((track) => track.id === id)?.track)
-    const videoTrack = useParticipantStore((state) => state.videoTracks.find((track) => track.id === id)?.track)
-    const videoContainerRef = useRef<HTMLDivElement>(null)
+
+    const audioTrack = useStreamTrackstore((state) => state.audioTracks.find((track) => track.id === id)?.track)
+    const videoTrack = useStreamTrackstore((state) => state.videoTracks.find((track) => track.id === id)?.track)
 
     return (
         <motion.div
             key={id}
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
             layout
-            ref={videoContainerRef}
-            className={`${videoTrack ? "w-fit h-fit bg-transparent" : "w-full h-full"} overflow-hidden relative m-auto`}
+            className={`${videoTrack ? "w-fit h-fit bg-transparent" : "w-full h-full"} bg-background overflow-hidden m-auto max-w-full max-h-full relative`}
         >
             <video
                 autoPlay
                 playsInline
-                muted
-                className={`rounded-md w-max h-max max-w-full max-h-full ${videoTrack ? "flex" : "hidden"} z-10`}
+                className={`rounded-md w-full h-full max-w-full max-h-full object-contain -scale-x-100 ${!videoTrack && "hidden"} z-10`}
                 ref={(video) => {
                     if (video) {
                         const stream = new MediaStream()
@@ -55,15 +45,52 @@ export const Participant = memo(({ participant: { name, id }, onMute, onRemove }
 
                         if (stream.getTracks().length > 0) {
                             video.srcObject = stream
-                            !video.played && video.play().catch((error) => {
-                                console.error("Error playing video:", error)
-                            });
+                            if (!video.played) {
+                                video.play().catch((error) => {
+                                    console.error("Error playing video:", error)
+                                });
+                            }
                         }
                     }
                 }}
             />
 
-            <VideoControls parentRef={videoContainerRef} audioTrack={audioTrack} name={name} />
+            <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between z-20">
+                <div className="bg-background/80 backdrop-blur-sm rounded-md px-2 py-1 text-xs flex items-center gap-1">
+                    {!audioTrack && <MicOff className="h-3 w-3" />}
+                    <span>{name}</span>
+                </div>
+            </div>
+
+            {/* <div className="z-50 w-full h-full absolute top-0 left-0 hover:opacity-100 opacity-0 inset-shadow-black bg-gradient-to-b from-black/20 to-transparent">
+                {name !== "You" && <div className="absolute top-2 right-2 overflow-hidden z-20">
+                    <DropdownMenu modal={false}>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-primary/80"
+                            >
+                                <MoreHorizontal />
+                            </Button>
+                        </DropdownMenuTrigger>
+
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={onMute}>
+                                {audioTrack ? "Mute" : "Request Unmute"}
+                            </DropdownMenuItem>
+
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                                onClick={onRemove}
+                                className="text-red-500"
+                            >
+                                Remove from meeting
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>}
+            </div> */}
 
             {!videoTrack && (
                 <motion.div
@@ -73,7 +100,7 @@ export const Participant = memo(({ participant: { name, id }, onMute, onRemove }
                     transition={{ duration: 0.3 }}
                     className="w-full h-full relative bg-gray-200 dark:bg-black/25 shadow flex justify-center items-center rounded-md overflow-hidden"
                 >
-                    <div className="absolute w-full h-full overflow-visible top-0 left-0 z-10 origin-center animate-roatate">
+                    <div className="absolute w-full h-full overflow-visible top-0 left-0 z-10 origin-center animate-bg-effect">
                         <div className="absolute bottom-20 left-20 bg-[#3291ff] w-1/4 h-1/4 dark:w-1/6 dark:h-1/6 blur-[150px] rounded-full"></div>
                         <div className="absolute top-20 right-20 bg-[#79ffe1] w-1/4 h-1/4 dark:w-1/6 dark:h-1/6 blur-[150px] rounded-full"></div>
                     </div>
@@ -102,84 +129,5 @@ export const Participant = memo(({ participant: { name, id }, onMute, onRemove }
     )
 });
 
-const VideoControls = ({ parentRef, audioTrack, name }: {
-    parentRef: React.RefObject<HTMLDivElement | null>,
-    audioTrack?: MediaStreamTrack | null,
-    name: string
-}) => {
-    const divRef = useRef<HTMLDivElement>(null)
-
-    useEffect(() => {
-        const parent = parentRef.current
-        const handleMouseEnter = (e: MouseEvent) => {
-            console.log("Mouse enter", parent?.contains(e.currentTarget as Node))
-            if (divRef.current && parent?.contains(e.currentTarget as Node)) {
-                divRef.current!.classList.remove("hidden")
-            }
-        }
-        const handleMouseLeave = (e: MouseEvent) => {
-            console.log("Mouse leave", parent?.contains(e.currentTarget as Node))
-            if (divRef.current && parent?.contains(e.currentTarget as Node)) {
-                divRef.current!.classList.add("hidden")
-            }
-        }
-
-        if (parent) {
-            parent.addEventListener("mouseenter", handleMouseEnter)
-            parent.addEventListener("mouseleave", handleMouseLeave)
-        }
-
-        return () => {
-            if (parent) {
-                parent.removeEventListener("mouseenter", handleMouseEnter)
-                parent.removeEventListener("mouseleave", handleMouseLeave)
-            }
-        }
-
-    }, [parentRef])
-
-    const onMute = () => {
-    }
-
-    const onRemove = () => {
-    }
-
-    return (
-        <div ref={divRef} className="bg-black/30 z-50 w-full h-full absolute top-0 left-0 hidden">
-            <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between z-20">
-                <div className="bg-background/80 backdrop-blur-sm rounded-md px-2 py-1 text-xs flex items-center gap-1">
-                    {!audioTrack && <MicOff className="h-3 w-3" />}
-                    <span>{name}</span>
-                </div>
-            </div>
-
-            {name !== "You" && <div className="absolute top-2 right-2 overflow-hidden z-20">
-                <DropdownMenu modal={false}>
-                    <DropdownMenuTrigger asChild>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="text-primary/80"
-                        >
-                            <MoreHorizontal />
-                        </Button>
-                    </DropdownMenuTrigger>
-
-                    <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={onMute}>
-                            {audioTrack ? "Mute" : "Request Unmute"}
-                        </DropdownMenuItem>
-
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                            onClick={onRemove}
-                            className="text-red-500"
-                        >
-                            Remove from meeting
-                        </DropdownMenuItem>
-                    </DropdownMenuContent>
-                </DropdownMenu>
-            </div>}
-        </div>
-    )
-}
+Participant.displayName = "Participant"
+export default Participant

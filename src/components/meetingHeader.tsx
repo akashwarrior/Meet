@@ -1,11 +1,12 @@
 'use client';
 
 import { toast } from "sonner";
-import { memo, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { Button } from "./ui/button";
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Users, Info, UserPlus, Copy, Shield } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { WebRTCService } from "@/lib/webrtc-service";
 
 import {
     DropdownMenu,
@@ -31,7 +32,7 @@ interface WaitingParticipant {
     joinTime: string
 }
 
-const MeetingHeader = memo(({ meetingId, admitParticipant }: { meetingId: string, admitParticipant: (participant: { id: string, name: string }) => void }) => {
+const MeetingHeader = memo(({ meetingId, service }: { meetingId: string, service: WebRTCService }) => {
     const [showInviteDialog, setShowInviteDialog] = useState(false)
     const [waitingParticipants, setWaitingParticipants] = useState<WaitingParticipant[]>([])
     const [showWaitingRoom, setShowWaitingRoom] = useState(false)
@@ -46,25 +47,32 @@ const MeetingHeader = memo(({ meetingId, admitParticipant }: { meetingId: string
         })
     }
 
+    useEffect(() => {
+        service.onUserRequest(({ name, sender }) => {
+            setWaitingParticipants((prev) => {
+                return [...prev, { id: sender, name, joinTime: new Date().toLocaleTimeString() }]
+            });
+        })
+
+        service.onParticipantLeave((sender) => {
+            setWaitingParticipants((prev) => prev.filter((p) => p.id !== sender))
+        });
+    }, [service])
+
 
     // Add participant admission functions
     const admit = (participantId: string) => {
         const waitingParticipant = waitingParticipants.find((p) => p.id === participantId)
         if (waitingParticipant) {
             // Add to participants
-            const newParticipant = {
-                id: waitingParticipant.id,
-                name: waitingParticipant.name,
-            }
-
-            admitParticipant(newParticipant)
+            service.acceptRequest(participantId)
 
             // Remove from waiting room
             setWaitingParticipants((prev) => prev.filter((p) => p.id !== participantId))
 
             toast.success("Participant admitted", {
                 description: `${waitingParticipant.name} has been admitted to the meeting`,
-                duration: 2000,
+                duration: 1500,
             })
         }
     }
@@ -72,6 +80,7 @@ const MeetingHeader = memo(({ meetingId, admitParticipant }: { meetingId: string
     const rejectParticipant = (participantId: string) => {
         const waitingParticipant = waitingParticipants.find((p) => p.id === participantId)
         if (waitingParticipant) {
+            service.rejectRequest(participantId)
             // Remove from waiting room
             setWaitingParticipants((prev) => prev.filter((p) => p.id !== participantId))
 
@@ -207,4 +216,5 @@ const MeetingHeader = memo(({ meetingId, admitParticipant }: { meetingId: string
     )
 });
 
+MeetingHeader.displayName = "MeetingHeader";
 export default MeetingHeader;

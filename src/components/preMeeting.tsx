@@ -1,108 +1,139 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ThemeToggle } from "./theme-toggle"
 import { toast } from "sonner"
-import { ChevronDown, EllipsisVertical, Mic, MicOff, Video, VideoOff, Volume2, X } from "lucide-react"
+import { ChevronDown, EllipsisVertical, Mic, MicOff, Video, VideoOff, Volume2 } from "lucide-react"
 import { motion } from 'motion/react';
+import { useMobile } from "@/hooks/use-mobile"
+import { Dialog, DialogContent, DialogTitle } from "./ui/dialog"
+import useMeetingPrefsStore from "@/store/meetingPrefs"
+import Image from "next/image"
+import Header from "./header"
+
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu"
-import { useMobile } from "@/hooks/use-mobile"
-import { Dialog, DialogClose, DialogContent, DialogTitle } from "./ui/dialog"
 
-// https://meet.google.com/fse-tric-uft
-
-export default function PreMeeting({ setIsLoading }: { setIsLoading: (isLoading: boolean) => void }) {
-    const videoRef = useRef<HTMLVideoElement>(null)
+export default function PreMeeting({
+    name,
+    isHost,
+    isLoading,
+    setIsLoading,
+    setName,
+}: {
+    name?: string | null,
+    isHost: boolean,
+    isLoading: boolean,
+    setIsLoading: (isLoading: boolean) => void,
+    setName: (name: string) => void,
+}) {
     const isMobile = useMobile({ width: 1024 });
-
     const nameRef = useRef<HTMLInputElement>(null)
-    const [isCameraOn, setIsCameraOn] = useState(false)
-    const [isMicOn, setIsMicOn] = useState(false)
-    const [isJoining, setIsJoining] = useState(false)
-    const [stream, setStream] = useState<MediaStream | null>(null)
-    const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([])
-    const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfo[]>([])
-    const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([])
-    const [selectedAudioInput, setSelectedAudioDevice] = useState<MediaDeviceInfo | null>(null)
-    const [selectedAudioOutput, setSelectedAudioOutput] = useState<MediaDeviceInfo | null>(null)
-    const [selectedVideoDevice, setSelectedVideoDevice] = useState<MediaDeviceInfo | null>(null)
 
-    const [showPermissionDialog, setShowPermissionDialog] = useState<boolean | null>(null)
+    const audioInputDevicesRef = useRef<MediaDeviceInfo[]>([])
+    const audioOutputDevicesRef = useRef<MediaDeviceInfo[]>([])
+    const videoInputDevicesRef = useRef<MediaDeviceInfo[]>([])
+    const [videoStream, setVideoStream] = useState<MediaStream | null>(null)
+    const {
+        audio: { audioInputDevice, audioOutputDevice },
+        video: { videoInputDevice, videoFrames: videoFramerate, videoResolution },
+        meeting: { isAudioEnabled, isVideoEnabled },
+        setMeetingPrefs,
+        setAudioPrefs,
+        setVideoPrefs
+    } = useMeetingPrefsStore();
+
+    const [isJoining, setIsJoining] = useState(false)
+    const [showPermissionDialog, setShowPermissionDialog] = useState<boolean>(true);
     const [isCollapsed, setIsCollapsed] = useState(false)
 
-    // Initialize camera and microphone
-    useEffect(() => {
-        if (isMobile || showPermissionDialog == null) return;
-        const initializeDevices = async () => {
-            try {
-                // Get available media devices
-                const devices = await navigator.mediaDevices.enumerateDevices()
-                const audioInputs = devices.filter((device) => device.kind === "audioinput" && device.deviceId)
-                const audioOutputs = devices.filter((device) => device.kind === "audiooutput" && device.deviceId)
-                const videoInputs = devices.filter((device) => device.kind === "videoinput" && device.deviceId)
-
-
-                // Set default devices
-                if (audioInputs.length > 0) {
-                    setAudioInputs(audioInputs)
-                    setSelectedAudioDevice(audioInputs[0])
-                }
-                if (audioOutputs.length > 0) {
-                    setAudioOutputs(audioOutputs)
-                    setSelectedAudioOutput(audioOutputs[0])
-                }
-                if (videoInputs.length > 0) {
-                    setVideoDevices(videoInputs)
-                    setSelectedVideoDevice(videoInputs[0])
-                }
-
-            } catch (error) {
-                console.error("Error initializing devices:", error)
-                toast.error("Device Error", {
-                    description: "Could not access camera or microphone. Please check your permissions.",
-                })
-            }
-        }
-
-        initializeDevices()
-
-        return () => {
-            if (stream) {
-                stream.getTracks().forEach((track) => track.stop())
-            }
-        }
-    }, [isMobile])
-
-
-    const getMediaStream = async ({ audio = false, video = false }: { audio?: boolean, video?: boolean }) => {
+    const initializeDevices = useCallback(async ({ audio, video }: { audio: boolean, video: boolean }) => {
+        if (isMobile) return
         try {
-            if (stream) {
-                stream.getTracks().forEach((track) => track.stop())
-            }
+            const devices = await navigator.mediaDevices.enumerateDevices();
 
-            // Get new stream with selected devices
-            const constraints: MediaStreamConstraints = {
-                audio: audio ? (selectedAudioInput ? { deviceId: { exact: selectedAudioInput.deviceId } } : true) : false,
-                video: video ? (selectedVideoDevice ? { deviceId: { exact: selectedVideoDevice.deviceId } } : true) : false,
-            }
-
-            const newStream = await navigator.mediaDevices.getUserMedia(constraints)
-            toast.success("Permissions granted", {
-                description: "You can now use your microphone and camera.",
+            devices.forEach((device) => {
+                if (!device.deviceId) return;
+                switch (device.kind) {
+                    case "audioinput":
+                        if (audio) {
+                            audioInputDevicesRef.current.push(device);
+                        }
+                        break;
+                    case "audiooutput":
+                        if (audio) {
+                            audioOutputDevicesRef.current.push(device);
+                        }
+                        break;
+                    case "videoinput":
+                        if (video) {
+                            videoInputDevicesRef.current.push(device);
+                        }
+                        break;
+                }
             });
-            setStream(newStream)
 
-            // Update video element with new stream
-            if (videoRef.current) {
-                videoRef.current.srcObject = newStream
+            // clear duplicates
+            audioInputDevicesRef.current = Array.from(new Set(audioInputDevicesRef.current.map(device => device.deviceId))).map(id => audioInputDevicesRef.current.find(device => device.deviceId === id)!);
+            audioOutputDevicesRef.current = Array.from(new Set(audioOutputDevicesRef.current.map(device => device.deviceId))).map(id => audioOutputDevicesRef.current.find(device => device.deviceId === id)!);
+            videoInputDevicesRef.current = Array.from(new Set(videoInputDevicesRef.current.map(device => device.deviceId))).map(id => videoInputDevicesRef.current.find(device => device.deviceId === id)!);
+
+
+            if (audioInputDevicesRef.current.length > 0) {
+                setAudioPrefs({ audioInputDevice: audioInputDevicesRef.current[0] })
             }
+            if (audioOutputDevicesRef.current.length > 0) {
+                setAudioPrefs({ audioOutputDevice: audioOutputDevicesRef.current[0] })
+            }
+            if (videoInputDevicesRef.current.length > 0) {
+                setVideoPrefs({ videoInputDevice: videoInputDevicesRef.current[0] })
+            }
+
+        } catch (err) {
+            if (err instanceof Error && err.name === 'NotAllowedError') {
+                toast.error("Permission Denied", {
+                    description: "Please allow access to your camera and microphone.",
+                });
+            } else {
+                toast.error("Error", {
+                    description: "Could not access your camera and microphone.",
+                });
+            }
+        }
+    }, [isMobile, setAudioPrefs, setVideoPrefs]);
+
+    const getMediaStream = useCallback(async ({ audio = false, video = false }: { audio?: boolean, video?: boolean }) => {
+        setShowPermissionDialog(false)
+        try {
+            if (!audioInputDevicesRef.current.length || !videoInputDevicesRef.current.length) {
+                initializeDevices({ audio: !audioInputDevicesRef.current.length, video: !videoInputDevicesRef.current.length })
+            }
+
+            const videoConfig: MediaTrackConstraints = {
+                facingMode: "user",
+                width: { ideal: videoResolution.width },
+                height: { ideal: videoResolution.height },
+                frameRate: { ideal: videoFramerate },
+                autoGainControl: false,
+                deviceId: videoInputDevice ? { exact: videoInputDevice.deviceId } : undefined
+            }
+
+            const audioConfig: MediaTrackConstraints = {
+                deviceId: audioInputDevice ? { exact: audioInputDevice.deviceId } : undefined,
+            }
+
+            const constraints: MediaStreamConstraints = {
+                audio: audio ? audioConfig : false,
+                video: video ? videoConfig : false,
+            }
+
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            setVideoStream(stream)
         } catch (error) {
             console.error("Error getting media stream:", error)
             toast.error("Media Error", {
@@ -110,28 +141,82 @@ export default function PreMeeting({ setIsLoading }: { setIsLoading: (isLoading:
             })
             throw error
         }
-    }
+    }, [audioInputDevice, videoInputDevice, initializeDevices, videoFramerate, videoResolution]);
+
+    useEffect(() => {
+        if (isLoading) {
+            setIsJoining(false)
+        }
+    }, [isLoading])
+
+    useEffect(() => {
+        return () => {
+            videoStream?.getTracks().forEach((track) => {
+                track.stop()
+                videoStream?.removeTrack(track)
+            })
+            setVideoStream(null)
+        }
+    }, [])
+
+    useEffect(() => {
+        if (!showPermissionDialog
+            && (!audioInputDevicesRef.current.length || !videoInputDevicesRef.current.length)
+        ) {
+            initializeDevices({ audio: isAudioEnabled, video: isVideoEnabled })
+        }
+    }, [showPermissionDialog, isMobile, isAudioEnabled, isVideoEnabled, initializeDevices])
+
+
+    useEffect(() => {
+        if (isVideoEnabled && isAudioEnabled) {
+            getMediaStream({ audio: true, video: true }).catch(() => {
+                setMeetingPrefs({ isAudioEnabled: false, isVideoEnabled: false })
+            });
+        } else if (isVideoEnabled) {
+            getMediaStream({ video: true }).catch(() => {
+                setMeetingPrefs({ isVideoEnabled: false })
+            });
+        } else if (isAudioEnabled) {
+            getMediaStream({ audio: true }).catch(() => {
+                setMeetingPrefs({ isAudioEnabled: false })
+            });
+        } else {
+            videoStream?.getTracks().forEach((track) => {
+                track.stop()
+                videoStream?.removeTrack(track)
+            });
+        }
+    }, [audioInputDevice, videoInputDevice, getMediaStream, setMeetingPrefs])
 
     // Toggle camera
     const toggleCamera = () => {
-        if (stream) {
-            const videoTracks = stream.getVideoTracks()
-            videoTracks.forEach((track) => {
-                track.enabled = !isCameraOn
-            })
+        if (!isVideoEnabled) {
+            getMediaStream({ audio: isAudioEnabled, video: true }).then(() => {
+                setMeetingPrefs({ isVideoEnabled: true })
+            });
+        } else {
+            videoStream?.getVideoTracks().forEach((track) => {
+                track.stop()
+                videoStream?.removeTrack(track)
+            });
+            setMeetingPrefs({ isVideoEnabled: false })
         }
-        setIsCameraOn(!isCameraOn)
     }
 
     // Toggle microphone
     const toggleMic = () => {
-        if (stream) {
-            const audioTracks = stream.getAudioTracks()
-            audioTracks.forEach((track) => {
-                track.enabled = !isMicOn
-            })
+        if (!isAudioEnabled) {
+            getMediaStream({ audio: true, video: isVideoEnabled }).then(() => {
+                setMeetingPrefs({ isAudioEnabled: true })
+            });
+        } else {
+            videoStream?.getAudioTracks().forEach((track) => {
+                track.stop()
+                videoStream?.removeTrack(track)
+            });
+            setMeetingPrefs({ isAudioEnabled: false })
         }
-        setIsMicOn(!isMicOn)
     }
 
     // Join the meeting
@@ -142,100 +227,105 @@ export default function PreMeeting({ setIsLoading }: { setIsLoading: (isLoading:
             })
             return
         }
+        setName(nameRef.current.value.trim())
         setIsJoining(true)
         setIsLoading(false)
     }
 
     return (
         <div className="min-h-[90vh] bg-background flex flex-col items-center justify-center">
-            <header className="sticky top-0 mx-auto px-4 py-4 flex items-center justify-between w-full z-30 bg-background">
-                <div className="flex items-center">
-                    <svg viewBox="0 0 87 30" className="h-6 w-auto text-foreground" fill="currentColor">
-                        <path d="M6.94 14.97c0-3.26-.87-5.83-2.6-7.69C2.6 5.4.7 4.5 0 4.5v21c.7 0 2.6-.9 4.34-2.78 1.73-1.86 2.6-4.43 2.6-7.75zm12 0c0 3.32.87 5.89 2.6 7.75C23.4 24.6 25.3 25.5 26 25.5v-21c-.7 0-2.6.9-4.34 2.78-1.73 1.86-2.6 4.43-2.6 7.75zm8.06 0c0-3.32-.87-5.89-2.6-7.75C22.6 5.4 20.7 4.5 20 4.5v21c.7 0 2.6-.9 4.34-2.78 1.73-1.86 2.6-4.43 2.6-7.75zm12 0c0 3.32.87 5.89 2.6 7.75C43.4 24.6 45.3 25.5 46 25.5v-21c-.7 0-2.6.9-4.34 2.78-1.73 1.86-2.6 4.43-2.6 7.75zm8.06 0c0-3.32-.87-5.89-2.6-7.75C42.6 5.4 40.7 4.5 40 4.5v21c.7 0 2.6-.9 4.34-2.78 1.73-1.86 2.6-4.43 2.6-7.75zm12 0c0 3.32.87 5.89 2.6 7.75C63.4 24.6 65.3 25.5 66 25.5v-21c-.7 0-2.6.9-4.34 2.78-1.73 1.86-2.6 4.43-2.6 7.75zm8.06 0c0-3.32-.87-5.89-2.6-7.75C62.6 5.4 60.7 4.5 60 4.5v21c.7 0 2.6-.9 4.34-2.78 1.73-1.86 2.6-4.43 2.6-7.75z" />
-                    </svg>
-                    <span className="ml-2 text-xl font-medium text-foreground">Meet</span>
-                </div>
-                <div className="flex items-center space-x-4">
-                    <ThemeToggle />
-                </div>
-            </header>
-
+            <Header />
             <main className="flex flex-col lg:flex-row gap-20 md:gap-5 items-center justify-around m-auto w-11/12">
-                <div className="w-full lg:w-fit flex flex-col items-center lg:items-start overflow-hidden">
-                    {(isCameraOn && false) ? (
-                        <video ref={videoRef} autoPlay muted playsInline className="w-full h-full max-w-full max-h-full object-contain rounded-xl" />
-                    ) : (
-                        <div className="h-full aspect-video flex items-center justify-center bg-gray-950/90 relative w-full lg:w-[55vw] max-w-lg lg:max-w-[55vw] rounded-xl overflow-hidden">
-                            <div className="text-white text-2xl">
-                                Camera is off
-                            </div>
-                            <div className="absolute bottom-4 md:bottom-6 flex gap-6 left-0 right-0 mx-auto w-fit">
-                                <Button
-                                    variant={isMicOn ? "ghost" : "destructive"}
-                                    size="icon"
-                                    className="rounded-full p-6 md:p-6.5 flex"
-                                    onClick={toggleMic}
-                                >
-                                    {isMicOn ? <Mic className="md:w-5! md:h-5!" /> : <MicOff className="md:w-5! md:h-5!" />}
-                                </Button>
+                <div className="w-full flex flex-col items-center lg:items-start relative lg:max-w-8/12">
+                    <div className="relative w-full h-full rounded-xl overflow-hidden sm:max-w-11/12 aspect-video">
+                        {isVideoEnabled ? (
+                            <video
+                                autoPlay
+                                playsInline
+                                muted
+                                ref={(video) => {
+                                    if (video) {
+                                        video.srcObject = videoStream
+                                    }
+                                }}
+                                className="w-full h-full max-w-full max-h-full -scale-x-100 object-cover"
+                            />
 
-                                <Button
-                                    variant={isCameraOn ? "ghost" : "destructive"}
-                                    size="icon"
-                                    className="rounded-full p-6 md:p-6.5 flex"
-                                    onClick={toggleCamera}
-                                >
-                                    {isCameraOn ? <Video className="md:w-5! md:h-5!" /> : <VideoOff className="md:w-5! md:h-5!" />}
-                                </Button>
+                        ) : (
+                            <div className="w-full h-full bg-gray-950/90 flex">
+                                <div className="text-white text-2xl m-auto">
+                                    Camera is off
+                                </div>
                             </div>
+                        )}
 
+                        <div className="absolute bottom-0 flex gap-6 left-0 right-0 items-center justify-center inset-shadow-black bg-gradient-to-t from-black/60 to-transparent py-4">
+                            <Button
+                                size="icon"
+                                className={`rounded-full p-6 md:p-6.5 flex border-none ring-1 ${isAudioEnabled ? "bg-transparent hover:bg-white/40" : "hover:bg-red-700 bg-red-500 ring-transparent"}`}
+                                onClick={toggleMic}
+                            >
+                                {isAudioEnabled ? <Mic className="md:w-5! md:h-5!" /> : <MicOff className="md:w-5! md:h-5!" />}
+                            </Button>
+
+                            <Button
+                                size="icon"
+                                className={`rounded-full p-6 md:p-6.5 flex border-none ring-1 ${isVideoEnabled ? "bg-transparent hover:bg-white/40" : "hover:bg-red-700 bg-red-500 ring-transparent"}`}
+                                onClick={toggleCamera}
+                            >
+                                {isVideoEnabled ? <Video className="md:w-5! md:h-5!" /> : <VideoOff className="md:w-5! md:h-5!" />}
+                            </Button>
+                        </div>
+
+                        <div className="absolute top-0 left-0 right-0 flex bg-gradient-to-b from-black/50 to-transparent p-3 justify-end items-center">
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="absolute! rounded-full top-3.5 right-3.5 text-white hover:bg-primary/50"
+                                className="rounded-full text-white hover:bg-primary/50"
                             >
                                 <EllipsisVertical className="w-5! h-5!" />
                             </Button>
                         </div>
-                    )}
+                    </div>
 
                     {/* Device selection */}
-                    <div className="my-4 gap-4 hidden lg:flex overflow-hidden">
-                        <DropdownMenu modal={false} >
+                    <div className="my-4 gap-4 hidden lg:flex items-center justify-start w-full">
+                        <DropdownMenu modal={false}>
                             <DropdownMenuTrigger asChild>
                                 <Button
                                     variant="outline"
-                                    className="rounded-full flex items-center justify-center gap-3 px-4! focus-visible:ring-0 max-w-1/4"
-                                    disabled={!audioInputs.length}
+                                    className="rounded-full flex items-center gap-3 px-4! focus-visible:ring-0 flex-1 max-w-1/4 border-0 hover:border hover:bg-primary/10! duration-200 shadow-none"
+                                    disabled={!audioInputDevicesRef.current.length}
                                 >
                                     <Mic />
                                     <motion.span
                                         className="truncate"
-                                        key={selectedAudioInput?.label}
+                                        key={audioInputDevice?.label}
                                         initial={{ opacity: 0, scale: 0.95 }}
                                         animate={{ opacity: 1, scale: 1 }}
                                         exit={{ opacity: 0, scale: 0.95 }}
                                         transition={{ duration: 0.3 }}
                                     >
-                                        {selectedAudioInput?.label || "Permission needed"}
+                                        {audioInputDevice?.label || "Permission needed"}
                                     </motion.span>
                                     <ChevronDown />
                                 </Button>
                             </DropdownMenuTrigger>
+
                             <DropdownMenuContent
                                 align="start"
-                                className="min-w-[var(--radix-dropdown-menu-trigger-width)] bg-background p-0"
+                                className="min-w-[var(--radix-dropdown-menu-trigger-width)] bg-background p-0 "
                             >
                                 <motion.div
                                     initial={{ opacity: 0, scale: 0.95 }}
                                     animate={{ opacity: 1, scale: 1 }}
                                     exit={{ opacity: 0, scale: 0.95 }}
                                     className="w-full h-full bg-background overflow-hidden"
-                                >{audioInputs.map((device) =>
+                                >{audioInputDevicesRef.current.map((device) =>
                                     <DropdownMenuItem
                                         key={device.deviceId}
-                                        onClick={() => setSelectedAudioDevice(device)}
-                                        className={`cursor-pointer px-4 py-3.5 hover:bg-primary/20 border-b ${device.deviceId === selectedAudioInput?.deviceId && "bg-primary/15 hover:bg-primary/20!"}`}
+                                        onClick={() => setAudioPrefs({ audioInputDevice: device })}
+                                        className={`cursor-pointer px-4 py-3.5 hover:bg-primary/20 border-b ${device.deviceId === audioInputDevice?.deviceId && "bg-primary/15 hover:bg-primary/20!"}`}
                                     >
                                         {device.label}
                                     </DropdownMenuItem>)}
@@ -245,38 +335,42 @@ export default function PreMeeting({ setIsLoading }: { setIsLoading: (isLoading:
                         </DropdownMenu>
 
 
-                        <DropdownMenu modal={false} >
+                        <DropdownMenu modal={false}>
                             <DropdownMenuTrigger asChild>
                                 <Button
                                     variant="outline"
-                                    className="rounded-full flex items-center justify-center gap-3 px-4! focus-visible:ring-0 max-w-1/4"
-                                    disabled={!audioOutputs.length}
+                                    className="rounded-full flex items-center gap-3 px-4! focus-visible:ring-0 flex-1 max-w-1/4 border-0 hover:border hover:bg-primary/10! duration-200 shadow-none"
+                                    disabled={!audioOutputDevicesRef.current.length}
                                 >
                                     <Volume2 />
                                     <motion.span
                                         className="truncate"
-                                        key={selectedAudioOutput?.label}
+                                        key={audioOutputDevice?.label}
                                         initial={{ opacity: 0, scale: 0.95 }}
                                         animate={{ opacity: 1, scale: 1 }}
                                         exit={{ opacity: 0, scale: 0.95 }}
                                         transition={{ duration: 0.3 }}
                                     >
-                                        {selectedAudioOutput?.label || "Permission needed"}
+                                        {audioOutputDevice?.label || "Permission needed"}
                                     </motion.span>
                                     <ChevronDown />
                                 </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="start" className="min-w-[var(--radix-dropdown-menu-trigger-width)] bg-background p-0">
+
+                            <DropdownMenuContent
+                                align="start"
+                                className="min-w-[var(--radix-dropdown-menu-trigger-width)] bg-background p-0 "
+                            >
                                 <motion.div
                                     initial={{ opacity: 0, scale: 0.95 }}
                                     animate={{ opacity: 1, scale: 1 }}
                                     exit={{ opacity: 0, scale: 0.95 }}
                                     className="w-full h-full bg-background overflow-hidden"
-                                >{audioOutputs.map((device) =>
+                                >{audioOutputDevicesRef.current.map((device) =>
                                     <DropdownMenuItem
                                         key={device.deviceId}
-                                        onClick={() => setSelectedVideoDevice(device)}
-                                        className={`cursor-pointer px-4 py-3.5 hover:bg-primary/20 border-b ${device.deviceId === selectedAudioOutput?.deviceId && "bg-primary/15 hover:bg-primary/20!"}`}
+                                        onClick={() => setAudioPrefs({ audioOutputDevice: device })}
+                                        className={`cursor-pointer px-4 py-3.5 hover:bg-primary/20 border-b ${device.deviceId === audioOutputDevice?.deviceId && "bg-primary/15 hover:bg-primary/20!"}`}
                                     >
                                         {device.label}
                                     </DropdownMenuItem>)}
@@ -289,35 +383,38 @@ export default function PreMeeting({ setIsLoading }: { setIsLoading: (isLoading:
                             <DropdownMenuTrigger asChild>
                                 <Button
                                     variant="outline"
-                                    className="rounded-full flex items-center justify-center gap-3 px-4! focus-visible:ring-0 max-w-1/4"
-                                    disabled={!videoDevices.length}
+                                    className="rounded-full flex items-center gap-3 px-4! focus-visible:ring-0 flex-1 max-w-1/4 border-0 hover:border hover:bg-primary/10! duration-200 shadow-none"
+                                    disabled={!videoInputDevicesRef.current.length}
                                 >
                                     <Video />
                                     <motion.span
                                         className="truncate"
-                                        key={selectedVideoDevice?.label}
+                                        key={videoInputDevice?.label}
                                         initial={{ opacity: 0, scale: 0.95 }}
                                         animate={{ opacity: 1, scale: 1 }}
                                         exit={{ opacity: 0, scale: 0.95 }}
                                         transition={{ duration: 0.3 }}
                                     >
-                                        {selectedVideoDevice?.label || "Permission needed"}
+                                        {videoInputDevice?.label || "Permission needed"}
                                     </motion.span>
                                     <ChevronDown />
                                 </Button>
                             </DropdownMenuTrigger>
 
-                            <DropdownMenuContent align="start" className="min-w-[var(--radix-dropdown-menu-trigger-width)] bg-background p-0">
+                            <DropdownMenuContent
+                                align="start"
+                                className="min-w-[var(--radix-dropdown-menu-trigger-width)] bg-background p-0 "
+                            >
                                 <motion.div
                                     initial={{ opacity: 0, scale: 0.95 }}
                                     animate={{ opacity: 1, scale: 1 }}
                                     exit={{ opacity: 0, scale: 0.95 }}
                                     className="w-full h-full bg-background overflow-hidden"
-                                >{videoDevices.map((device) =>
+                                >{videoInputDevicesRef.current.map((device) =>
                                     <DropdownMenuItem
                                         key={device.deviceId}
-                                        onClick={() => setSelectedVideoDevice(device)}
-                                        className={`cursor-pointer px-4 py-3.5 hover:bg-primary/20 border-b ${device.deviceId === selectedVideoDevice?.deviceId && "bg-primary/15 hover:bg-primary/20!"}`}
+                                        onClick={() => setVideoPrefs({ videoInputDevice: device })}
+                                        className={`cursor-pointer px-4 py-3.5 hover:bg-primary/20 border-b ${device.deviceId === videoInputDevice?.deviceId && "bg-primary/15 hover:bg-primary/20!"}`}
                                     >
                                         {device.label}
                                     </DropdownMenuItem>)}
@@ -329,12 +426,13 @@ export default function PreMeeting({ setIsLoading }: { setIsLoading: (isLoading:
                 </div>
 
                 <div className="w-full max-w-xs flex flex-col gap-7 items-center">
-                    <h1 className="text-2xl text-foreground">What's your name?</h1>
+                    <h1 className="text-2xl text-foreground">What&apos;s your name?</h1>
                     <Input
                         type="text"
                         name="name"
                         placeholder="Your name"
                         ref={nameRef}
+                        defaultValue={name || ""}
                         disabled={isJoining}
                         className="border rounded-md h-full bg-background focus-visible:ring-2 focus-visible:ring-primary transition-all duration-200 p-4.5 md:text-base"
                     />
@@ -345,110 +443,97 @@ export default function PreMeeting({ setIsLoading }: { setIsLoading: (isLoading:
                         onClick={joinMeeting}
                         disabled={isJoining}
                     >
-                        {isJoining ? "Joining..." : "Join Meeting"}
+                        {isJoining ? "Joining..." : isHost ? "Join Meeting" : "Ask to join"}
                     </Button>
                 </div>
-            </main >
-            <Dialog open={showPermissionDialog || showPermissionDialog == null}>
-                <DialogContent className="px-0 [&>button]:hidden">
-                    <DialogTitle className="absolute top-2 right-2">
-                        <DialogClose asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => setShowPermissionDialog(false)}
-                                className="focus-visible:ring-0"
-                            >
-                                <X className="h-4 w-4" />
-                            </Button>
-                        </DialogClose>
-                    </DialogTitle>
-                    <div className="p-6">
-                        <div className="flex justify-center m-6">
-                            <img
-                                src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Screenshot%202025-04-27%20034204-FsmwxRnraI3X0Digp2nmdd6RDPRKt4.png"
-                                alt="Permission illustration"
-                                className="w-full max-w-xs"
-                            />
-                        </div>
+            </main>
 
-                        <h2 className="text-2xl font-normal text-center m-4">
-                            Do you want people to see and hear you in the meeting?
-                        </h2>
+            {/* Permission Dialog */}
+            <Dialog open={showPermissionDialog && (!audioInputDevicesRef.current.length && !videoInputDevicesRef.current.length)}>
+                <DialogContent className="[&>button]:hidden border-none flex flex-col items-center rounded-2xl md:max-w-3xl!" aria-describedby={undefined}>
+                    <DialogTitle />
+                    <Image
+                        width={200}
+                        height={200}
+                        priority
+                        src="/dialog_image.jpeg"
+                        alt="Permission illustration"
+                        className="w-1/2 rounded-lg max-w-2xs"
+                    />
+                    <h2 className="text-2xl font-normal text-center">
+                        Do you want people to see and hear you in the meeting?
+                    </h2>
 
-                        <p className="text-center text-muted-foreground mb-8">
-                            You can still turn off your microphone and camera anytime in the meeting.
-                        </p>
+                    <p className="text-center text-muted-foreground">
+                        You can still turn off your microphone and camera anytime in the meeting.
+                    </p>
+                    <div className="flex w-full items-center justify-center gap-3 max-w-lg">
+                        <Button
+                            className="text-white py-5.5 rounded-full min-w-4/5 px-6"
+                            onClick={() => {
+                                getMediaStream({ audio: true, video: true }).then(() => {
+                                    setMeetingPrefs({ isAudioEnabled: true, isVideoEnabled: true })
+                                }).catch(() => {
+                                    setMeetingPrefs({ isAudioEnabled: false, isVideoEnabled: false });
+                                });
+                            }}
+                        >
+                            Use microphone and camera
+                        </Button>
 
-                        <div className="flex flex-col gap-3 items-center">
-                            <div className="flex w-full items-center justify-center gap-3">
-                                <Button
-                                    className="text-white py-5.5 rounded-full min-w-4/5 px-6"
-                                    onClick={() => {
-                                        setIsMicOn(true)
-                                        setIsCameraOn(true)
-                                        getMediaStream({ audio: true, video: true }).then(() => {
-                                            setShowPermissionDialog(false)
-                                        }).catch(() => {
-                                            setIsMicOn(false)
-                                            setIsCameraOn(false)
-                                        });
-                                    }}
-                                >
-                                    Use microphone and camera
-                                </Button>
-
-                                <Button
-                                    variant="outline"
-                                    size="icon"
-                                    className={`text-primary rounded-full p-5 ${isCollapsed ? "rotate-180" : ""}`}
-                                    onClick={() => setIsCollapsed(!isCollapsed)}
-                                >
-                                    <ChevronDown />
-                                </Button>
-                            </div>
-
-                            <motion.div
-                                initial={{ height: 0 }}
-                                animate={isCollapsed ? { height: "auto" } : { height: 0 }}
-                                transition={{ duration: 0.2 }}
-                                className="flex gap-3 md:gap-4 min-w-11/12 overflow-hidden">
-                                <Button
-                                    variant="outline"
-                                    className="rounded-full flex-1 py-5 px-6.5 text-primary hover:text-primary hover:bg-primary/10!"
-                                    onClick={() => {
-                                        setIsMicOn(true)
-                                        getMediaStream({ audio: true }).then(() => {
-                                            setShowPermissionDialog(false)
-                                        }).catch(() => {
-                                            setIsMicOn(false)
-                                        });
-                                    }}
-                                >
-                                    Use microphone
-                                </Button>
-
-                                <Button
-                                    variant="outline"
-                                    className="rounded-full flex-1 py-5 px-6.5 text-primary hover:text-primary hover:bg-primary/10!"
-                                    onClick={() => {
-                                        setIsCameraOn(true)
-                                        getMediaStream({ video: true }).then(() => {
-                                            setShowPermissionDialog(false)
-                                        }).catch(() => {
-                                            setIsCameraOn(false)
-                                        });
-                                    }}
-                                >
-                                    Use camera
-                                </Button>
-                            </motion.div>
-
-                            <Button variant="ghost" className="mr-4 p-5 rounded-full" onClick={() => setShowPermissionDialog(false)}>
-                                Continue without microphone and camera
-                            </Button>
-                        </div>
+                        <Button
+                            variant="outline"
+                            size="icon"
+                            className={`text-primary rounded-full p-5 ${isCollapsed ? "rotate-180" : ""}`}
+                            onClick={() => setIsCollapsed(!isCollapsed)}
+                        >
+                            <ChevronDown />
+                        </Button>
                     </div>
+
+                    <motion.div
+                        initial={{ height: 0 }}
+                        animate={isCollapsed ? { height: "auto" } : { height: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="w-11/12 overflow-hidden flex flex-col gap-4 items-center max-w-md">
+                        <div className="flex gap-3 md:gap-4 w-full">
+                            <Button
+                                variant="outline"
+                                className="rounded-full flex-1 py-5 px-6.5 text-primary hover:text-primary hover:bg-primary/10!"
+                                onClick={() => {
+                                    getMediaStream({ audio: true }).then(() => {
+                                        setMeetingPrefs({ isAudioEnabled: true })
+                                    }).catch(() => {
+                                        setMeetingPrefs({ isAudioEnabled: false })
+                                    });
+                                }}
+                            >
+                                Use microphone
+                            </Button>
+
+                            <Button
+                                variant="outline"
+                                className="rounded-full flex-1 py-5 px-6.5 text-primary hover:text-primary hover:bg-primary/10!"
+                                onClick={() => {
+                                    getMediaStream({ video: true }).then(() => {
+                                        setMeetingPrefs({ isVideoEnabled: true })
+                                    }).catch(() => {
+                                        setMeetingPrefs({ isVideoEnabled: false })
+                                    });
+                                }}
+                            >
+                                Use camera
+                            </Button>
+                        </div>
+
+                        <Button
+                            variant="ghost"
+                            className="p-5 rounded-full"
+                            onClick={() => setShowPermissionDialog(false)}
+                        >
+                            Continue without microphone and camera
+                        </Button>
+                    </motion.div>
                 </DialogContent>
             </Dialog>
         </div >
